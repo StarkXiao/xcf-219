@@ -460,4 +460,373 @@ router.post('/recycle-bin/clear', (req, res) => {
   }
 });
 
+const CATEGORY_REQUIREMENTS = {
+  '科技项目': {
+    minContentLength: 500,
+    requiredMaterials: ['business_license', 'project_application', 'ip_cert'],
+    description: '科技项目类申报需提供详细的技术方案和知识产权证明'
+  },
+  '企业发展': {
+    minContentLength: 300,
+    requiredMaterials: ['business_license', 'financial_statement'],
+    description: '企业发展类申报需提供财务报表证明企业经营状况'
+  },
+  '资质认定': {
+    minContentLength: 800,
+    requiredMaterials: ['business_license', 'legal_id_card', 'ip_cert', 'honor_qualification'],
+    description: '资质认定类申报需提供完整的企业资质和荣誉证明'
+  },
+  '其他': {
+    minContentLength: 200,
+    requiredMaterials: ['business_license'],
+    description: '其他类申报需提供基础的企业证明材料'
+  }
+};
+
+router.post('/qualification-check', (req, res) => {
+  try {
+    const { guideline_id, company, applicant, phone, email, content, declaration_id } = req.body;
+    const risks = [];
+    let totalChecks = 0;
+    let passedChecks = 0;
+
+    let guidelineInfo = null;
+    if (guideline_id) {
+      const guideline = get('SELECT * FROM guidelines WHERE id = ?', [guideline_id]);
+      if (guideline) {
+        let daysRemaining = null;
+        if (guideline.deadline) {
+          const deadline = new Date(guideline.deadline);
+          const now = new Date();
+          daysRemaining = Math.ceil((deadline - now) / (1000 * 60 * 60 * 24));
+        }
+        guidelineInfo = {
+          id: guideline.id,
+          title: guideline.title,
+          category: guideline.category || '其他',
+          deadline: guideline.deadline,
+          days_remaining: daysRemaining
+        };
+      }
+    }
+
+    totalChecks++;
+    if (guideline_id) {
+      passedChecks++;
+    } else {
+      risks.push({
+        id: 'no-guideline',
+        level: 'medium',
+        category: 'guideline',
+        title: '未选择申报指南',
+        description: '建议选择对应的申报指南以提高申报成功率',
+        suggestion: '请从下拉列表中选择符合项目类型的申报指南'
+      });
+    }
+
+    if (guidelineInfo) {
+      totalChecks++;
+      if (guidelineInfo.days_remaining !== null) {
+        if (guidelineInfo.days_remaining < 0) {
+          risks.push({
+            id: 'deadline-passed',
+            level: 'high',
+            category: 'guideline',
+            title: '申报截止日期已过',
+            description: `该指南的申报截止日期为 ${guidelineInfo.deadline}，已超过 ${Math.abs(guidelineInfo.days_remaining)} 天`,
+            suggestion: '请选择其他尚未截止的申报指南'
+          });
+        } else if (guidelineInfo.days_remaining <= 3) {
+          risks.push({
+            id: 'deadline-urgent',
+            level: 'medium',
+            category: 'guideline',
+            title: '申报即将截止',
+            description: `距离截止日期仅剩 ${guidelineInfo.days_remaining} 天，请尽快完成申报材料`,
+            suggestion: '建议优先准备必需材料，避免错过申报时间'
+          });
+          passedChecks++;
+        } else {
+          passedChecks++;
+        }
+      } else {
+        passedChecks++;
+      }
+
+      const categoryReq = CATEGORY_REQUIREMENTS[guidelineInfo.category] || CATEGORY_REQUIREMENTS['其他'];
+      totalChecks++;
+      const contentLen = (content || '').length;
+      if (contentLen >= categoryReq.minContentLength) {
+        passedChecks++;
+      } else {
+        risks.push({
+          id: 'content-too-short',
+          level: 'medium',
+          category: 'guideline',
+          title: '项目内容描述不够详细',
+          description: `${guidelineInfo.category}类申报建议内容不少于 ${categoryReq.minContentLength} 字，当前仅 ${contentLen} 字`,
+          suggestion: categoryReq.description
+        });
+      }
+
+      totalChecks++;
+      const mtCodes = categoryReq.requiredMaterials;
+      const uploadedMaterialCodes = new Set();
+      if (declaration_id) {
+        const uploaded = all(`
+          SELECT DISTINCT mt.code 
+          FROM attachments a 
+          LEFT JOIN material_types mt ON a.material_type_id = mt.id 
+          WHERE a.declaration_id = ?
+        `, [declaration_id]);
+        uploaded.forEach(m => m.code && uploadedMaterialCodes.add(m.code));
+      }
+      const missingMaterials = mtCodes.filter(c => !uploadedMaterialCodes.has(c));
+      if (missingMaterials.length === 0) {
+        passedChecks++;
+      } else {
+        const materialNames = {
+          business_license: '企业营业执照',
+          legal_id_card: '法人身份证',
+          org_code_cert: '组织机构代码证',
+          tax_reg_cert: '税务登记证',
+          project_application: '项目申请书',
+          financial_statement: '财务报表',
+          ip_cert: '知识产权证明',
+          honor_qualification: '荣誉资质',
+          other_materials: '其他材料'
+        };
+        const missingNames = missingMaterials.map(c => materialNames[c] || c).join('、');
+        risks.push({
+          id: 'missing-materials',
+          level: 'high',
+          category: 'material',
+          title: '缺少必需的申报材料',
+          description: `根据${guidelineInfo.category}类申报要求，还需上传：${missingNames}`,
+          suggestion: '请在附件材料区域上传上述必需文件'
+        });
+      }
+    }
+
+    totalChecks++;
+    if (company && company.trim().length >= 2) {
+      passedChecks++;
+    } else {
+      risks.push({
+        id: 'company-name-invalid',
+        level: 'high',
+        category: 'company',
+        title: '企业名称不完整',
+        description: '企业名称至少需要2个字符',
+        suggestion: '请填写完整的企业全称（与营业执照一致）'
+      });
+    }
+
+    totalChecks++;
+    if (applicant && applicant.trim().length >= 2) {
+      passedChecks++;
+    } else {
+      risks.push({
+        id: 'applicant-invalid',
+        level: 'medium',
+        category: 'company',
+        title: '申请人信息不完整',
+        description: '请填写有效的申请人姓名',
+        suggestion: '请填写申请人真实姓名'
+      });
+    }
+
+    totalChecks++;
+    const phoneRegex = /^1[3-9]\d{9}$/;
+    if (phone && phoneRegex.test(phone.trim())) {
+      passedChecks++;
+    } else if (!phone) {
+      risks.push({
+        id: 'phone-missing',
+        level: 'low',
+        category: 'company',
+        title: '未填写联系电话',
+        description: '建议填写联系电话以便后续沟通',
+        suggestion: '请填写有效的手机号码'
+      });
+    } else {
+      risks.push({
+        id: 'phone-invalid',
+        level: 'medium',
+        category: 'company',
+        title: '联系电话格式不正确',
+        description: '请检查手机号码格式',
+        suggestion: '请输入正确的11位手机号码'
+      });
+    }
+
+    totalChecks++;
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (email && emailRegex.test(email.trim())) {
+      passedChecks++;
+    } else if (!email) {
+      risks.push({
+        id: 'email-missing',
+        level: 'low',
+        category: 'company',
+        title: '未填写电子邮箱',
+        description: '建议填写邮箱用于接收申报通知',
+        suggestion: '请填写常用的电子邮箱地址'
+      });
+    } else {
+      risks.push({
+        id: 'email-invalid',
+        level: 'medium',
+        category: 'company',
+        title: '电子邮箱格式不正确',
+        description: '请检查邮箱格式',
+        suggestion: '请输入正确的邮箱格式，如 example@company.com'
+      });
+    }
+
+    let companyHistory = null;
+    if (company && company.trim()) {
+      const excludeId = declaration_id ? declaration_id : null;
+      const sql = excludeId 
+        ? 'SELECT * FROM declarations WHERE company = ? AND id != ? AND is_deleted = 0'
+        : 'SELECT * FROM declarations WHERE company = ? AND is_deleted = 0';
+      const params = excludeId ? [company.trim(), excludeId] : [company.trim()];
+      const history = all(sql, params);
+      
+      const totalDeclarations = history.length;
+      const approvedCount = history.filter(d => d.status === 'approved').length;
+      const rejectedCount = history.filter(d => d.status === 'rejected').length;
+      const pendingCount = history.filter(d => ['submitted', 'reviewing', 'first_reviewed', 'second_reviewed'].includes(d.status)).length;
+      const approvalRate = totalDeclarations > 0 ? Math.round((approvedCount / totalDeclarations) * 100) : 0;
+      const lastDeclaration = history.length > 0 
+        ? history.sort((a, b) => new Date(b.created_at) - new Date(a.created_at))[0] 
+        : null;
+
+      companyHistory = {
+        total_declarations: totalDeclarations,
+        approved_count: approvedCount,
+        rejected_count: rejectedCount,
+        pending_count: pendingCount,
+        approval_rate: approvalRate,
+        last_declaration_at: lastDeclaration?.created_at
+      };
+
+      totalChecks++;
+      if (rejectedCount >= 3) {
+        risks.push({
+          id: 'high-rejection-rate',
+          level: 'high',
+          category: 'history',
+          title: '历史驳回次数较多',
+          description: `该企业历史共有 ${rejectedCount} 次申报被驳回，需重点关注申报材料质量`,
+          suggestion: '建议仔细审查本次申报材料，参考以往驳回原因进行改进'
+        });
+      } else {
+        passedChecks++;
+      }
+
+      totalChecks++;
+      if (approvalRate < 30 && totalDeclarations >= 2) {
+        risks.push({
+          id: 'low-approval-rate',
+          level: 'medium',
+          category: 'history',
+          title: '历史立项通过率偏低',
+          description: `该企业历史申报立项通过率为 ${approvalRate}%，低于平均水平`,
+          suggestion: '建议加强项目创新性和可行性论证，提高申报材料质量'
+        });
+      } else {
+        passedChecks++;
+      }
+
+      if (guideline_id) {
+        totalChecks++;
+        const sameGuidelineHistory = history.filter(d => d.guideline_id === guideline_id);
+        const sameGuidelinePending = sameGuidelineHistory.filter(d => 
+          ['draft', 'submitted', 'reviewing', 'first_reviewed', 'second_reviewed'].includes(d.status)
+        );
+        if (sameGuidelinePending.length > 0) {
+          risks.push({
+            id: 'duplicate-guideline-submission',
+            level: 'medium',
+            category: 'history',
+            title: '同一指南存在待审核申报',
+            description: `该企业在当前指南下已有 ${sameGuidelinePending.length} 个正在进行中的申报`,
+            suggestion: '同一指南下的重复申报可能影响评审结果，建议确认是否继续'
+          });
+        } else {
+          passedChecks++;
+        }
+      }
+
+      totalChecks++;
+      if (totalDeclarations === 0) {
+        risks.push({
+          id: 'first-time-declaration',
+          level: 'info',
+          category: 'history',
+          title: '首次申报提醒',
+          description: '该企业暂无历史申报记录，属于首次申报',
+          suggestion: '建议仔细阅读申报指南要求，确保材料完整准确'
+        });
+      } else {
+        passedChecks++;
+      }
+    }
+
+    const highRisks = risks.filter(r => r.level === 'high');
+    const mediumRisks = risks.filter(r => r.level === 'medium');
+    const lowRisks = risks.filter(r => r.level === 'low');
+
+    let overallRisk = 'low';
+    if (highRisks.length > 0) {
+      overallRisk = 'high';
+    } else if (mediumRisks.length >= 3) {
+      overallRisk = 'high';
+    } else if (mediumRisks.length > 0) {
+      overallRisk = 'medium';
+    } else if (lowRisks.length > 0) {
+      overallRisk = 'low';
+    }
+
+    const score = totalChecks > 0 ? Math.round((passedChecks / totalChecks) * 100) : 0;
+
+    const canSubmit = highRisks.length === 0;
+
+    let summary = '';
+    if (risks.length === 0) {
+      summary = '所有检查项均已通过，申报材料完整，可以提交！';
+    } else {
+      const parts = [];
+      if (highRisks.length > 0) parts.push(`${highRisks.length} 项高风险`);
+      if (mediumRisks.length > 0) parts.push(`${mediumRisks.length} 项中风险`);
+      if (lowRisks.length > 0) parts.push(`${lowRisks.length} 项低风险`);
+      if (risks.filter(r => r.level === 'info').length > 0) parts.push(`${risks.filter(r => r.level === 'info').length} 项提示`);
+      summary = `资格预审完成：发现 ${parts.join('，')}。预审评分：${score} 分。`;
+      if (!canSubmit) {
+        summary += ' 建议先处理高风险问题后再提交。';
+      }
+    }
+
+    logOperation(req, '资格预审', '申报表单', declaration_id || null, summary);
+
+    res.json({
+      success: true,
+      data: {
+        overall_risk: overallRisk,
+        score,
+        total_checks: totalChecks,
+        passed_checks: passedChecks,
+        risks,
+        summary,
+        can_submit: canSubmit,
+        company_history: companyHistory,
+        guideline_info: guidelineInfo
+      }
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
 module.exports = router;

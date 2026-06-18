@@ -385,3 +385,39 @@ export const StatusColorMap: Record<string, string> = {
   approved: 'green',
   rejected: 'red'
 };
+
+export type RiskLevel = 'high' | 'medium' | 'low' | 'info';
+
+export interface RiskItem {
+  id: string;
+  level: RiskLevel;
+  category: 'guideline' | 'company' | 'history' | 'material';
+  title: string;
+  description: string;
+  suggestion?: string;
+}
+
+export interface QualificationCheckResult {
+  overall_risk: RiskLevel;
+  score: number;
+  total_checks: number;
+  passed_checks: number;
+  risks: RiskItem[];
+  summary: string;
+  can_submit: boolean;
+  company_history?: {
+    total_declarations: number;
+    approved_count: number;
+    rejected_count: number;
+    pending_count: number;
+    approval_rate: number;
+    last_declaration_at?: string;
+  };
+  guideline_info?: {
+    id: number;
+    title: string;
+    category: string;
+    deadline?: string;
+    days_remaining?: number;
+  };
+}

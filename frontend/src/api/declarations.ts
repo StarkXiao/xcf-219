@@ -1,5 +1,5 @@
 import api from './request';
-import type { Declaration, ApiResponse, DeclarationStats } from '../types';
+import type { Declaration, ApiResponse, DeclarationStats, QualificationCheckResult } from '../types';
 
 export const getDeclarations = (params?: {
   status?: string;
@@ -51,5 +51,20 @@ export const restoreDeclaration = (
   return api.post<any, ApiResponse<{ status: string }>>(
     `/declarations/${id}/restore`,
     data || {}
+  );
+};
+
+export const checkQualification = (data: {
+  guideline_id?: number | null;
+  company?: string;
+  applicant?: string;
+  phone?: string;
+  email?: string;
+  content?: string;
+  declaration_id?: number;
+}) => {
+  return api.post<any, ApiResponse<QualificationCheckResult>>(
+    '/declarations/qualification-check',
+    data
   );
 };

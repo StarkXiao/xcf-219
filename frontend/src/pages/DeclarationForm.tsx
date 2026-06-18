@@ -1,16 +1,19 @@
-import { useEffect, useState, useRef, useCallback } from 'react';
+import { useEffect, useState, useRef, useCallback, useMemo } from 'react';
 import {
   Card, Form, Input, Select, Button, message, Steps, Upload, List, Tag, Space, Modal,
-  Drawer, Timeline, Tooltip, Empty, Tabs, Alert, Divider, Row, Col, Statistic, Badge
+  Drawer, Timeline, Tooltip, Empty, Tabs, Alert, Divider, Row, Col, Statistic, Badge,
+  Progress, Collapse, Avatar
 } from 'antd';
 import {
   ArrowLeftOutlined, UploadOutlined, InboxOutlined, DeleteOutlined, DownloadOutlined,
   SaveOutlined, HistoryOutlined, RollbackOutlined, DiffOutlined, ClockCircleOutlined,
-  ThunderboltOutlined, ReloadOutlined, ExclamationCircleOutlined
+  ThunderboltOutlined, ReloadOutlined, ExclamationCircleOutlined, SafetyOutlined,
+  WarningOutlined, CheckCircleOutlined, InfoCircleOutlined, FileTextOutlined,
+  BankOutlined, ScheduleOutlined
 } from '@ant-design/icons';
 import { useNavigate, useParams } from 'react-router-dom';
 import { getGuidelines } from '../api/guidelines';
-import { getDeclaration, createDeclaration, updateDeclaration, submitDeclaration } from '../api/declarations';
+import { getDeclaration, createDeclaration, updateDeclaration, submitDeclaration, checkQualification } from '../api/declarations';
 import { getAttachments, uploadAttachments, deleteAttachment, downloadAttachment } from '../api/attachments';
 import {
   autosaveDraft, saveVersion as saveVersionApi, getVersions, compareVersions,
@@ -18,7 +21,8 @@ import {
 } from '../api/versions';
 import type {
   Guideline, Declaration, Attachment, DeclarationVersion, DiffCompareResult,
-  SaveTypeOption, VersionsListResponse, FieldDiff, RestorePreviewResult
+  SaveTypeOption, VersionsListResponse, FieldDiff, RestorePreviewResult,
+  QualificationCheckResult, RiskItem, RiskLevel
 } from '../types';
 
 const { TextArea } = Input;
@@ -69,6 +73,12 @@ function DeclarationForm() {
   const [restoreLoading, setRestoreLoading] = useState(false);
   const [restoreVersion, setRestoreVersion] = useState<DeclarationVersion | null>(null);
 
+  const [qualificationResult, setQualificationResult] = useState<QualificationCheckResult | null>(null);
+  const [qualificationLoading, setQualificationLoading] = useState(false);
+  const [qualificationDrawerOpen, setQualificationDrawerOpen] = useState(false);
+  const qualificationTimerRef = useRef<number | null>(null);
+  const lastQualificationDataRef = useRef<string>('');
+
   useEffect(() => {
     loadGuidelines();
     loadSaveTypes();
@@ -81,8 +91,33 @@ function DeclarationForm() {
       if (autoSaveTimerRef.current) {
         clearInterval(autoSaveTimerRef.current);
       }
+      if (qualificationTimerRef.current) {
+        clearTimeout(qualificationTimerRef.current);
+      }
     };
   }, [id]);
+
+  const handleFormValuesChange = (changedValues: any, allValues: any) => {
+    const checkData = {
+      guideline_id: allValues.guideline_id,
+      company: allValues.company,
+      applicant: allValues.applicant,
+      phone: allValues.phone,
+      email: allValues.email,
+      content: allValues.content,
+      declaration_id: id ? parseInt(id) : declaration?.id
+    };
+    const dataStr = JSON.stringify(checkData);
+    if (dataStr !== lastQualificationDataRef.current) {
+      lastQualificationDataRef.current = dataStr;
+      if (qualificationTimerRef.current) {
+        clearTimeout(qualificationTimerRef.current);
+      }
+      qualificationTimerRef.current = window.setTimeout(() => {
+        runQualificationCheck(checkData);
+      }, 800);
+    }
+  };
 
   useEffect(() => {
     if (isEdit && declaration?.status === 'draft' && autoSaveEnabled) {
@@ -99,6 +134,85 @@ function DeclarationForm() {
       if (res.success) setSaveTypeOptions(res.data || []);
     } catch (e) {}
   };
+
+  const runQualificationCheck = async (data?: any) => {
+    try {
+      const checkData = data || {
+        ...form.getFieldsValue(true),
+        declaration_id: id ? parseInt(id) : declaration?.id
+      };
+      setQualificationLoading(true);
+      const res = await checkQualification(checkData);
+      if (res.success && res.data) {
+        setQualificationResult(res.data);
+      }
+    } catch (e) {
+    } finally {
+      setQualificationLoading(false);
+    }
+  };
+
+  const runManualQualificationCheck = async () => {
+    setQualificationDrawerOpen(true);
+    await runQualificationCheck();
+  };
+
+  const getRiskLevelConfig = (level: RiskLevel) => {
+    const configs: Record<RiskLevel, { color: string; bgColor: string; icon: React.ReactNode; label: string }> = {
+      high: {
+        color: '#ff4d4f',
+        bgColor: '#fff2f0',
+        icon: <ExclamationCircleOutlined />,
+        label: '高风险'
+      },
+      medium: {
+        color: '#faad14',
+        bgColor: '#fffbe6',
+        icon: <WarningOutlined />,
+        label: '中风险'
+      },
+      low: {
+        color: '#1890ff',
+        bgColor: '#e6f7ff',
+        icon: <InfoCircleOutlined />,
+        label: '低风险'
+      },
+      info: {
+        color: '#52c41a',
+        bgColor: '#f6ffed',
+        icon: <CheckCircleOutlined />,
+        label: '提示'
+      }
+    };
+    return configs[level];
+  };
+
+  const getRiskCategoryConfig = (category: RiskItem['category']) => {
+    const configs: Record<RiskItem['category'], { label: string; icon: React.ReactNode }> = {
+      guideline: { label: '指南要求', icon: <FileTextOutlined /> },
+      company: { label: '企业信息', icon: <BankOutlined /> },
+      history: { label: '历史记录', icon: <HistoryOutlined /> },
+      material: { label: '材料要求', icon: <ScheduleOutlined /> }
+    };
+    return configs[category];
+  };
+
+  const riskCounts = useMemo(() => {
+    if (!qualificationResult) return { high: 0, medium: 0, low: 0, info: 0 };
+    return {
+      high: qualificationResult.risks.filter(r => r.level === 'high').length,
+      medium: qualificationResult.risks.filter(r => r.level === 'medium').length,
+      low: qualificationResult.risks.filter(r => r.level === 'low').length,
+      info: qualificationResult.risks.filter(r => r.level === 'info').length
+    };
+  }, [qualificationResult]);
+
+  const scoreColor = useMemo(() => {
+    if (!qualificationResult) return '#1890ff';
+    if (qualificationResult.score >= 80) return '#52c41a';
+    if (qualificationResult.score >= 60) return '#faad14';
+    return '#ff4d4f';
+  }, [qualificationResult]);
 
   const startAutoSave = () => {
     stopAutoSave();
@@ -169,20 +283,32 @@ function DeclarationForm() {
     try {
       const res = await getDeclaration(parseInt(id));
       if (res.success && res.data) {
-        setDeclaration(res.data);
-        form.setFieldsValue(res.data);
+        const data = res.data;
+        setDeclaration(data);
+        form.setFieldsValue(data);
         lastFormValuesRef.current = {
-          title: res.data.title,
-          guideline_id: res.data.guideline_id,
-          applicant: res.data.applicant,
-          company: res.data.company,
-          phone: res.data.phone,
-          email: res.data.email,
-          content: res.data.content
+          title: data.title,
+          guideline_id: data.guideline_id,
+          applicant: data.applicant,
+          company: data.company,
+          phone: data.phone,
+          email: data.email,
+          content: data.content
         };
-        setVersionCount(res.data.version_count || 0);
-        if (res.data.last_auto_save_at) setLastAutoSaveAt(new Date(res.data.last_auto_save_at));
+        setVersionCount(data.version_count || 0);
+        if (data.last_auto_save_at) setLastAutoSaveAt(new Date(data.last_auto_save_at));
         loadAttachments(parseInt(id));
+        setTimeout(() => {
+          runQualificationCheck({
+            guideline_id: data.guideline_id,
+            company: data.company,
+            applicant: data.applicant,
+            phone: data.phone,
+            email: data.email,
+            content: data.content,
+            declaration_id: parseInt(id!)
+          });
+        }, 500);
       }
     } catch (error: any) {
       if (error.response?.status === 410) {
@@ -286,27 +412,61 @@ function DeclarationForm() {
     const declarationId = id ? parseInt(id) : declaration?.id;
     if (!declarationId) return;
 
-    Modal.confirm({
-      title: '确认提交',
-      icon: <ExclamationCircleOutlined />,
-      content: (
-        <div>
-          <p>确定要提交申报吗？提交后将进入审批流程，无法再编辑。</p>
-          <Alert type="warning" message="提交前请确保所有内容已保存" showIcon style={{ marginTop: 8 }} />
-        </div>
-      ),
-      onOk: async () => {
-        try {
-          const res = await submitDeclaration(declarationId);
-          if (res.success) {
-            message.success('提交成功');
-            navigate('/declarations');
-          }
-        } catch (error: any) {
-          message.error(error.response?.data?.message || '提交失败');
+    await runQualificationCheck();
+
+    const hasHighRisks = qualificationResult && !qualificationResult.can_submit;
+
+    const modalContent = (
+      <div>
+        <p>确定要提交申报吗？提交后将进入审批流程，无法再编辑。</p>
+        {qualificationResult && (
+          <div style={{ marginTop: 12 }}>
+            <Alert
+              type={qualificationResult.can_submit ? 'success' : 'warning'}
+              showIcon
+              message={
+                <Space>
+                  <SafetyOutlined />
+                  <span>资格预审评分：<strong style={{ color: scoreColor }}>{qualificationResult.score}分</strong></span>
+                </Space>
+              }
+              description={qualificationResult.summary}
+            />
+          </div>
+        )}
+      </div>
+    );
+
+    const doSubmit = async () => {
+      try {
+        const res = await submitDeclaration(declarationId);
+        if (res.success) {
+          message.success('提交成功');
+          navigate('/declarations');
         }
+      } catch (error: any) {
+        message.error(error.response?.data?.message || '提交失败');
       }
-    });
+    };
+
+    if (hasHighRisks) {
+      Modal.confirm({
+        title: '存在高风险项，确认提交',
+        icon: <ExclamationCircleOutlined style={{ color: '#ff4d4f' }} />,
+        content: modalContent,
+        okText: '仍要提交',
+        okButtonProps: { danger: true },
+        cancelText: '继续完善',
+        onOk: doSubmit
+      });
+    } else {
+      Modal.confirm({
+        title: '确认提交',
+        icon: <ExclamationCircleOutlined />,
+        content: modalContent,
+        onOk: doSubmit
+      });
+    }
   };
 
   const openHistoryDrawer = async () => {
@@ -554,6 +714,27 @@ function DeclarationForm() {
               </Space>
             </Space>
           )}
+          {(!declaration || declaration.status === 'draft') && (
+            <Button
+              type={qualificationResult && !qualificationResult.can_submit ? 'primary' : 'default'}
+              danger={!!(qualificationResult && !qualificationResult.can_submit)}
+              icon={qualificationLoading ? <span className="anticon-spin">⟳</span> : <SafetyOutlined />}
+              onClick={runManualQualificationCheck}
+            >
+              <Space>
+                <span>资格预审</span>
+                {qualificationResult && (
+                  <Space size={4}>
+                    {riskCounts.high > 0 && <Badge count={riskCounts.high} style={{ backgroundColor: '#ff4d4f' }} />}
+                    {riskCounts.medium > 0 && <Badge count={riskCounts.medium} style={{ backgroundColor: '#faad14' }} />}
+                    <Tag color={scoreColor} style={{ marginLeft: 4, marginRight: 0 }}>
+                      {qualificationResult.score}分
+                    </Tag>
+                  </Space>
+                )}
+              </Space>
+            </Button>
+          )}
         </div>
         <Space style={{ marginTop: 8 }}>
           {isEdit && (
@@ -564,8 +745,55 @@ function DeclarationForm() {
         </Space>
       </div>
 
+      {qualificationResult && qualificationResult.risks.length > 0 && (
+        <Card
+          style={{ marginBottom: 16, borderLeft: `4px solid ${qualificationResult.can_submit ? (riskCounts.medium > 0 ? '#faad14' : '#52c41a') : '#ff4d4f'}` }}
+          bodyStyle={{ padding: '12px 20px' }}
+        >
+          <Space size="large" style={{ width: '100%', justifyContent: 'space-between', flexWrap: 'wrap' }}>
+            <Space size="large" wrap>
+              <Space>
+                <SafetyOutlined style={{ fontSize: 18, color: scoreColor }} />
+                <strong style={{ fontSize: 15 }}>资格预审结果</strong>
+                <Tag color={scoreColor} style={{ fontSize: 14, padding: '2px 12px' }}>
+                  {qualificationResult.score} 分
+                </Tag>
+              </Space>
+              <Space size={[12, 8]} wrap>
+                {riskCounts.high > 0 && (
+                  <Tag color="#ff4d4f" style={{ padding: '4px 10px' }}>
+                    <ExclamationCircleOutlined /> {riskCounts.high} 项高风险
+                  </Tag>
+                )}
+                {riskCounts.medium > 0 && (
+                  <Tag color="#faad14" style={{ padding: '4px 10px' }}>
+                    <WarningOutlined /> {riskCounts.medium} 项中风险
+                  </Tag>
+                )}
+                {riskCounts.low > 0 && (
+                  <Tag color="#1890ff" style={{ padding: '4px 10px' }}>
+                    <InfoCircleOutlined /> {riskCounts.low} 项低风险
+                  </Tag>
+                )}
+                {riskCounts.info > 0 && (
+                  <Tag color="#52c41a" style={{ padding: '4px 10px' }}>
+                    <CheckCircleOutlined /> {riskCounts.info} 项提示
+                  </Tag>
+                )}
+              </Space>
+            </Space>
+            <Button size="small" type="link" onClick={() => setQualificationDrawerOpen(true)}>
+              查看详情 →
+            </Button>
+          </Space>
+          <div style={{ marginTop: 8, color: '#666', fontSize: 13 }}>
+            {qualificationResult.summary}
+          </div>
+        </Card>
+      )}
+
       <Card title="基本信息" style={{ marginBottom: 16 }}>
-        <Form form={form} layout="vertical">
+        <Form form={form} layout="vertical" onValuesChange={handleFormValuesChange}>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
             <Form.Item name="title" label="项目名称" rules={[{ required: true, message: '请输入项目名称' }]}>
               <Input placeholder="请输入项目名称" disabled={declaration?.status !== 'draft' && isEdit} />
@@ -776,6 +1004,238 @@ function DeclarationForm() {
           </div>
         )}
       </Modal>
+
+      <Drawer
+        title={
+          <Space>
+            <SafetyOutlined />
+            <span>资格预审详情</span>
+            {qualificationResult && (
+              <Tag color={scoreColor} style={{ marginLeft: 8 }}>
+                {qualificationResult.score} 分
+              </Tag>
+            )}
+          </Space>
+        }
+        width={720}
+        open={qualificationDrawerOpen}
+        onClose={() => setQualificationDrawerOpen(false)}
+        extra={
+          <Space>
+            <Button
+              size="small"
+              icon={qualificationLoading ? <ReloadOutlined spin /> : <ReloadOutlined />}
+              onClick={runQualificationCheck}
+              disabled={qualificationLoading}
+            >
+              重新检测
+            </Button>
+          </Space>
+        }
+      >
+        {qualificationLoading && !qualificationResult && (
+          <Empty description="正在进行资格预审..." />
+        )}
+        {qualificationResult && (
+          <div>
+            <Row gutter={16} style={{ marginBottom: 20 }}>
+              <Col span={8}>
+                <Card size="small" style={{ textAlign: 'center' }}>
+                  <Progress
+                    type="circle"
+                    percent={qualificationResult.score}
+                    strokeColor={scoreColor}
+                    width={80}
+                  />
+                  <div style={{ marginTop: 8, fontWeight: 'bold' }}>预审评分</div>
+                </Card>
+              </Col>
+              <Col span={8}>
+                <Card size="small">
+                  <Statistic
+                    title={qualificationResult.can_submit ? '提交状态' : '提交状态'}
+                    value={qualificationResult.can_submit ? '可提交' : '建议完善后提交'}
+                    valueStyle={{ color: qualificationResult.can_submit ? '#52c41a' : '#ff4d4f', fontSize: 16 }}
+                    prefix={qualificationResult.can_submit ? <CheckCircleOutlined /> : <ExclamationCircleOutlined />}
+                  />
+                  <div style={{ marginTop: 12, fontSize: 12, color: '#999' }}>
+                    通过 {qualificationResult.passed_checks} / {qualificationResult.total_checks} 项检查
+                  </div>
+                </Card>
+              </Col>
+              <Col span={8}>
+                <Card size="small" title="风险分布">
+                  <Space direction="vertical" size={4} style={{ width: '100%' }}>
+                    {riskCounts.high > 0 && (
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <Tag color="#ff4d4f"><ExclamationCircleOutlined /> 高风险</Tag>
+                        <strong>{riskCounts.high}</strong>
+                      </div>
+                    )}
+                    {riskCounts.medium > 0 && (
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <Tag color="#faad14"><WarningOutlined /> 中风险</Tag>
+                        <strong>{riskCounts.medium}</strong>
+                      </div>
+                    )}
+                    {riskCounts.low > 0 && (
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <Tag color="#1890ff"><InfoCircleOutlined /> 低风险</Tag>
+                        <strong>{riskCounts.low}</strong>
+                      </div>
+                    )}
+                    {riskCounts.info > 0 && (
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <Tag color="#52c41a"><CheckCircleOutlined /> 提示</Tag>
+                        <strong>{riskCounts.info}</strong>
+                      </div>
+                    )}
+                    {qualificationResult.risks.length === 0 && (
+                      <div style={{ color: '#52c41a', textAlign: 'center', padding: '12px 0' }}>
+                        <CheckCircleOutlined style={{ fontSize: 24 }} />
+                        <div style={{ marginTop: 4 }}>无风险项！</div>
+                      </div>
+                    )}
+                  </Space>
+                </Card>
+              </Col>
+            </Row>
+
+            <Alert
+              type={qualificationResult.can_submit ? 'success' : 'warning'}
+              showIcon
+              message="预审结论"
+              description={qualificationResult.summary}
+              style={{ marginBottom: 20 }}
+            />
+
+            {qualificationResult.guideline_info && (
+              <Card
+                size="small"
+                title={<Space><FileTextOutlined /> 指南信息</Space>}
+                style={{ marginBottom: 16 }}
+              >
+                <Row gutter={16}>
+                  <Col span={12}>
+                    <div style={{ fontSize: 12, color: '#999' }}>指南分类</div>
+                    <Tag color="geekblue" style={{ marginTop: 4 }}>{qualificationResult.guideline_info.category}</Tag>
+                  </Col>
+                  <Col span={12}>
+                    <div style={{ fontSize: 12, color: '#999' }}>截止日期</div>
+                    <div style={{ marginTop: 4, fontWeight: 500 }}>
+                      {qualificationResult.guideline_info.deadline || '未设置'}
+                      {qualificationResult.guideline_info.days_remaining !== undefined && qualificationResult.guideline_info.days_remaining !== null && (
+                        <Tag
+                          color={qualificationResult.guideline_info.days_remaining < 0 ? 'red' : (qualificationResult.guideline_info.days_remaining <= 3 ? 'orange' : 'green')}
+                          style={{ marginLeft: 8 }}
+                        >
+                          {qualificationResult.guideline_info.days_remaining < 0
+                            ? `已过${Math.abs(qualificationResult.guideline_info.days_remaining)}天`
+                            : `剩余${qualificationResult.guideline_info.days_remaining}天`}
+                        </Tag>
+                      )}
+                    </div>
+                  </Col>
+                </Row>
+                <div style={{ marginTop: 8, fontSize: 12, color: '#666' }}>
+                  {qualificationResult.guideline_info.title}
+                </div>
+              </Card>
+            )}
+
+            {qualificationResult.company_history && (
+              <Card
+                size="small"
+                title={<Space><BankOutlined /> 企业历史申报记录</Space>}
+                style={{ marginBottom: 16 }}
+              >
+                <Row gutter={16}>
+                  <Col span={6}>
+                    <Statistic title="总申报数" value={qualificationResult.company_history.total_declarations} />
+                  </Col>
+                  <Col span={6}>
+                    <Statistic
+                      title="立项通过"
+                      value={qualificationResult.company_history.approved_count}
+                      valueStyle={{ color: '#52c41a' }}
+                    />
+                  </Col>
+                  <Col span={6}>
+                    <Statistic
+                      title="已驳回"
+                      value={qualificationResult.company_history.rejected_count}
+                      valueStyle={{ color: '#ff4d4f' }}
+                    />
+                  </Col>
+                  <Col span={6}>
+                    <Statistic
+                      title="立项通过率"
+                      value={qualificationResult.company_history.approval_rate}
+                      suffix="%"
+                      valueStyle={{ color: qualificationResult.company_history.approval_rate >= 50 ? '#52c41a' : '#faad14' }}
+                    />
+                  </Col>
+                </Row>
+                {qualificationResult.company_history.last_declaration_at && (
+                  <div style={{ marginTop: 8, fontSize: 12, color: '#999' }}>
+                    最近申报时间：{new Date(qualificationResult.company_history.last_declaration_at).toLocaleString()}
+                  </div>
+                )}
+              </Card>
+            )}
+
+            {qualificationResult.risks.length > 0 && (
+              <Card
+                size="small"
+                title={
+                  <Space>
+                    <ExclamationCircleOutlined />
+                    <span>风险明细</span>
+                    <Tag color="default">{qualificationResult.risks.length} 项</Tag>
+                  </Space>
+                }
+              >
+                <Space direction="vertical" size={12} style={{ width: '100%' }}>
+                  {qualificationResult.risks.map((risk) => {
+                    const levelCfg = getRiskLevelConfig(risk.level);
+                    const categoryCfg = getRiskCategoryConfig(risk.category);
+                    return (
+                      <div
+                        key={risk.id}
+                        style={{
+                          padding: '12px 16px',
+                          borderRadius: 8,
+                          borderLeft: `4px solid ${levelCfg.color}`,
+                          backgroundColor: levelCfg.bgColor
+                        }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+                          <Space>
+                            <span style={{ color: levelCfg.color, fontSize: 16 }}>{levelCfg.icon}</span>
+                            <strong style={{ fontSize: 14 }}>{risk.title}</strong>
+                          </Space>
+                          <Space>
+                            <Tag color={levelCfg.color} style={{ margin: 0 }}>{levelCfg.label}</Tag>
+                            <Tag icon={categoryCfg.icon} color="default">{categoryCfg.label}</Tag>
+                          </Space>
+                        </div>
+                        <div style={{ color: '#333', fontSize: 13, marginBottom: 4 }}>
+                          {risk.description}
+                        </div>
+                        {risk.suggestion && (
+                          <div style={{ color: '#666', fontSize: 12, padding: '6px 10px', background: 'rgba(255,255,255,0.6)', borderRadius: 4 }}>
+                            <strong style={{ color: '#1890ff' }}>建议：</strong>{risk.suggestion}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </Space>
+              </Card>
+            )}
+          </div>
+        )}
+      </Drawer>
     </div>
   );
 }
