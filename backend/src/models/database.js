@@ -256,6 +256,21 @@ function initDatabase() {
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
+
+    CREATE TABLE IF NOT EXISTS enterprise_profiles (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      company_name TEXT NOT NULL UNIQUE,
+      applicant TEXT,
+      phone TEXT,
+      email TEXT,
+      address TEXT,
+      business_scope TEXT,
+      contact_person TEXT,
+      declaration_count INTEGER DEFAULT 0,
+      last_declaration_at DATETIME,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
   `);
 
   safeAddColumn('attachments', 'material_type_id', 'INTEGER REFERENCES material_types(id)');
@@ -281,6 +296,8 @@ function initDatabase() {
   safeCreateIndex('idx_approval_reason_categories_action', 'approval_reason_categories', 'action_type');
   safeCreateIndex('idx_saved_filters_module', 'saved_filters', 'module');
   safeCreateIndex('idx_saved_filters_user', 'saved_filters', 'user');
+  safeCreateIndex('idx_enterprise_profiles_name', 'enterprise_profiles', 'company_name');
+  safeCreateIndex('idx_enterprise_profiles_applicant', 'enterprise_profiles', 'applicant');
 
   const guidelineCount = get('SELECT COUNT(*) as count FROM guidelines');
   if (guidelineCount.count === 0) {
@@ -509,6 +526,35 @@ function initDatabase() {
     insertReasonCategory.run('rollback', 'format_issue', '格式问题', '材料格式、排版不符合规范', 3);
     insertReasonCategory.run('rollback', 'clarification_needed', '需补充说明', '需要申请人对相关内容进行澄清说明', 4);
     insertReasonCategory.run('rollback', 'other_rollback', '其他', '其他退回原因', 99);
+  }
+
+  const enterpriseCount = get('SELECT COUNT(*) as count FROM enterprise_profiles');
+  if (enterpriseCount.count === 0) {
+    const existingCompanies = all(`
+      SELECT company, applicant, phone, email, COUNT(*) as decl_count, MAX(created_at) as last_decl
+      FROM declarations 
+      WHERE is_deleted = 0 AND company IS NOT NULL AND company != ''
+      GROUP BY company
+    `);
+    
+    if (existingCompanies.length > 0) {
+      const insertEnterprise = db.prepare(`
+        INSERT INTO enterprise_profiles (company_name, applicant, phone, email, declaration_count, last_declaration_at)
+        VALUES (?, ?, ?, ?, ?, ?)
+      `);
+      
+      existingCompanies.forEach(company => {
+        insertEnterprise.run(
+          company.company,
+          company.applicant || '',
+          company.phone || '',
+          company.email || '',
+          company.decl_count || 1,
+          company.last_decl
+        );
+      });
+      console.log(`从历史申报数据初始化了 ${existingCompanies.length} 条企业信息`);
+    }
   }
 
   console.log('数据库初始化完成');

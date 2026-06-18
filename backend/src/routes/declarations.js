@@ -4,6 +4,7 @@ const { get, all, run } = require('../models/database');
 const { logOperation, logOperationWithData } = require('../middleware/logger');
 const { saveVersion, SAVE_TYPES } = require('./versions');
 const { computeDiff, getChangedFields } = require('../utils/diff');
+const { saveOrUpdateEnterpriseProfile, updateEnterpriseProfileInfo } = require('./enterprise-profiles');
 
 const STATUS_MAP = {
   draft: '草稿',
@@ -214,6 +215,8 @@ router.post('/', (req, res) => {
     const newDeclaration = get('SELECT * FROM declarations WHERE id = ?', [result.lastID]);
     saveVersion(null, result.lastID, newDeclaration, SAVE_TYPES.MANUAL, user, '创建初始版本');
 
+    saveOrUpdateEnterpriseProfile(company, applicant, phone, email);
+
     logOperationWithData(req, '创建', '申报表单', result.lastID, 
       `创建申报: ${title}, 申请人: ${applicant}`,
       null, newDeclaration, ['title', 'applicant', 'company', 'content']);
@@ -269,6 +272,15 @@ router.put('/:id', (req, res) => {
     const diff = computeDiff(beforeData, updated);
     const summary = change_note || diff.summary;
     const versionResult = saveVersion(null, req.params.id, updated, SAVE_TYPES.MANUAL, user, summary);
+
+    if (changedFields.some(f => ['applicant', 'company', 'phone', 'email'].includes(f))) {
+      updateEnterpriseProfileInfo(
+        updateData.company,
+        updateData.applicant,
+        updateData.phone,
+        updateData.email
+      );
+    }
 
     logOperationWithData(req, '更新', '申报表单', req.params.id,
       `更新申报: ${title || declaration.title}, ${diff.summary}`,

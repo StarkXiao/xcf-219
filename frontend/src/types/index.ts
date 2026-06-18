@@ -564,3 +564,24 @@ export interface TodoKanbanSummary {
   upcoming_deadlines: TodoKanbanDeadline[];
   upcoming_deadlines_count: number;
 }
+
+export interface EnterpriseProfile {
+  id: number;
+  company_name: string;
+  applicant: string;
+  phone: string;
+  email: string;
+  address?: string;
+  business_scope?: string;
+  contact_person?: string;
+  declaration_count: number;
+  last_declaration_at?: string;
+  created_at: string;
+  updated_at: string;
+  recent_declarations?: Array<{
+    id: number;
+    title: string;
+    status: string;
+    created_at: string;
+  }>;
+}

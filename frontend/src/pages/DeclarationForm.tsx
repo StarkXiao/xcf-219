@@ -2,7 +2,7 @@ import { useEffect, useState, useRef, useCallback, useMemo } from 'react';
 import {
   Card, Form, Input, Select, Button, message, Steps, Upload, List, Tag, Space, Modal,
   Drawer, Timeline, Tooltip, Empty, Tabs, Alert, Divider, Row, Col, Statistic, Badge,
-  Progress, Collapse, Avatar
+  Progress, Collapse, Avatar, AutoComplete
 } from 'antd';
 import {
   ArrowLeftOutlined, UploadOutlined, InboxOutlined, DeleteOutlined, DownloadOutlined,
@@ -15,6 +15,7 @@ import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { getGuidelines, getGuidelineTemplates } from '../api/guidelines';
 import { getDeclaration, createDeclaration, updateDeclaration, submitDeclaration, checkQualification } from '../api/declarations';
 import { getAttachments, uploadAttachments, deleteAttachment, downloadAttachment } from '../api/attachments';
+import { searchEnterprises, getEnterpriseProfileByName } from '../api/enterprise-profiles';
 import {
   autosaveDraft, saveVersion as saveVersionApi, getVersions, compareVersions,
   restoreVersion as restoreVersionApi, getSaveTypes, previewRestoreVersion
@@ -22,7 +23,7 @@ import {
 import type {
   Guideline, Declaration, Attachment, DeclarationVersion, DiffCompareResult,
   SaveTypeOption, VersionsListResponse, FieldDiff, RestorePreviewResult,
-  QualificationCheckResult, RiskItem, RiskLevel
+  QualificationCheckResult, RiskItem, RiskLevel, EnterpriseProfile
 } from '../types';
 
 const { TextArea } = Input;
@@ -80,6 +81,12 @@ function DeclarationForm() {
   const qualificationTimerRef = useRef<number | null>(null);
   const lastQualificationDataRef = useRef<string>('');
 
+  const [enterpriseOptions, setEnterpriseOptions] = useState<Array<{ value: string; label: React.ReactNode; enterprise: EnterpriseProfile }>>([]);
+  const [enterpriseSearchLoading, setEnterpriseSearchLoading] = useState(false);
+  const [selectedEnterprise, setSelectedEnterprise] = useState<EnterpriseProfile | null>(null);
+  const enterpriseSearchTimerRef = useRef<number | null>(null);
+  const [autoFillTipVisible, setAutoFillTipVisible] = useState(false);
+
   useEffect(() => {
     loadGuidelines();
     loadSaveTypes();
@@ -117,6 +124,81 @@ function DeclarationForm() {
       qualificationTimerRef.current = window.setTimeout(() => {
         runQualificationCheck(checkData);
       }, 800);
+    }
+
+    if (changedValues.company !== undefined) {
+      const currentCompany = changedValues.company;
+      if (currentCompany && currentCompany.length >= 2) {
+        if (enterpriseSearchTimerRef.current) {
+          clearTimeout(enterpriseSearchTimerRef.current);
+        }
+        enterpriseSearchTimerRef.current = window.setTimeout(() => {
+          searchEnterpriseProfiles(currentCompany);
+        }, 300);
+      } else {
+        setEnterpriseOptions([]);
+        setSelectedEnterprise(null);
+      }
+    }
+  };
+
+  const searchEnterpriseProfiles = async (keyword: string) => {
+    try {
+      setEnterpriseSearchLoading(true);
+      const res = await searchEnterprises(keyword);
+      if (res.success && res.data) {
+        const options = res.data.map(ep => ({
+          value: ep.company_name,
+          label: (
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div>
+                <div style={{ fontWeight: 500 }}>{ep.company_name}</div>
+                <div style={{ fontSize: 12, color: '#999', marginTop: 2 }}>
+                  {ep.applicant || '暂无联系人'} · {ep.phone || '暂无电话'}
+                </div>
+              </div>
+              <Tag color="blue" style={{ marginLeft: 8 }}>
+                {ep.declaration_count} 次申报
+              </Tag>
+            </div>
+          ),
+          enterprise: ep
+        }));
+        setEnterpriseOptions(options);
+      }
+    } catch (e) {
+      console.error('搜索企业信息失败:', e);
+    } finally {
+      setEnterpriseSearchLoading(false);
+    }
+  };
+
+  const handleEnterpriseSelect = (value: string, option: any) => {
+    const enterprise = option.enterprise as EnterpriseProfile;
+    setSelectedEnterprise(enterprise);
+
+    const currentValues = form.getFieldsValue(true);
+    const fieldsToFill: any = {};
+
+    if (enterprise.applicant && !currentValues.applicant) {
+      fieldsToFill.applicant = enterprise.applicant;
+    }
+    if (enterprise.phone && !currentValues.phone) {
+      fieldsToFill.phone = enterprise.phone;
+    }
+    if (enterprise.email && !currentValues.email) {
+      fieldsToFill.email = enterprise.email;
+    }
+
+    if (Object.keys(fieldsToFill).length > 0) {
+      form.setFieldsValue(fieldsToFill);
+      setAutoFillTipVisible(true);
+      setTimeout(() => setAutoFillTipVisible(false), 3000);
+
+      lastFormValuesRef.current = {
+        ...lastFormValuesRef.current,
+        ...fieldsToFill
+      };
     }
   };
 
@@ -347,6 +429,18 @@ function DeclarationForm() {
         setVersionCount(data.version_count || 0);
         if (data.last_auto_save_at) setLastAutoSaveAt(new Date(data.last_auto_save_at));
         loadAttachments(parseInt(id));
+
+        if (data.company) {
+          try {
+            const epRes = await getEnterpriseProfileByName(data.company);
+            if (epRes.success && epRes.data) {
+              setSelectedEnterprise(epRes.data);
+            }
+          } catch (e) {
+            console.error('加载企业信息失败:', e);
+          }
+        }
+
         setTimeout(() => {
           runQualificationCheck({
             guideline_id: data.guideline_id,
@@ -848,6 +942,19 @@ function DeclarationForm() {
         </Card>
       )}
 
+      {autoFillTipVisible && (
+        <Alert
+          message="企业信息已自动填充"
+          description="已根据企业历史申报记录自动填充联系人信息，您可以根据需要进行修改。"
+          type="success"
+          showIcon
+          icon={<SafetyOutlined />}
+          closable
+          onClose={() => setAutoFillTipVisible(false)}
+          style={{ marginBottom: 16 }}
+        />
+      )}
+
       <Card title="基本信息" style={{ marginBottom: 16 }}>
         <Form form={form} layout="vertical" onValuesChange={handleFormValuesChange}>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
@@ -862,18 +969,49 @@ function DeclarationForm() {
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
             <Form.Item name="applicant" label="申请人" rules={[{ required: true, message: '请输入申请人' }]}>
-              <Input placeholder="请输入申请人姓名" disabled={declaration?.status !== 'draft' && isEdit} />
+              <Input 
+                placeholder="请输入申请人姓名" 
+                disabled={declaration?.status !== 'draft' && isEdit} 
+                suffix={selectedEnterprise?.applicant ? <Tag color="green" style={{ marginRight: -8 }}>自动填充</Tag> : null}
+              />
             </Form.Item>
-            <Form.Item name="company" label="企业名称" rules={[{ required: true, message: '请输入企业名称' }]}>
-              <Input placeholder="请输入企业名称" disabled={declaration?.status !== 'draft' && isEdit} />
+            <Form.Item 
+              name="company" 
+              label={
+                <Space>
+                  企业名称
+                  <Tooltip title="输入企业名称可搜索历史记录，选择后自动填充联系人信息">
+                    <InfoCircleOutlined style={{ color: '#999', fontSize: 12 }} />
+                  </Tooltip>
+                </Space>
+              } 
+              rules={[{ required: true, message: '请输入企业名称' }]}
+            >
+              <AutoComplete
+                options={enterpriseOptions}
+                onSelect={handleEnterpriseSelect}
+                placeholder="请输入企业名称，支持搜索历史企业"
+                disabled={declaration?.status !== 'draft' && isEdit}
+                notFoundContent={enterpriseSearchLoading ? '搜索中...' : '暂无匹配企业'}
+              >
+                <Input />
+              </AutoComplete>
             </Form.Item>
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
             <Form.Item name="phone" label="联系电话">
-              <Input placeholder="请输入联系电话" disabled={declaration?.status !== 'draft' && isEdit} />
+              <Input 
+                placeholder="请输入联系电话" 
+                disabled={declaration?.status !== 'draft' && isEdit}
+                suffix={selectedEnterprise?.phone ? <Tag color="green" style={{ marginRight: -8 }}>自动填充</Tag> : null}
+              />
             </Form.Item>
             <Form.Item name="email" label="电子邮箱">
-              <Input placeholder="请输入电子邮箱" disabled={declaration?.status !== 'draft' && isEdit} />
+              <Input 
+                placeholder="请输入电子邮箱" 
+                disabled={declaration?.status !== 'draft' && isEdit}
+                suffix={selectedEnterprise?.email ? <Tag color="green" style={{ marginRight: -8 }}>自动填充</Tag> : null}
+              />
             </Form.Item>
           </div>
           <Form.Item name="content" label="项目内容" rules={[{ required: true, message: '请输入项目内容' }]}>
