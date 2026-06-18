@@ -12,7 +12,7 @@ import {
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { getDeclarations } from '../api/declarations';
-import { getApprovalHistory, approveDeclaration, rejectDeclaration, rollbackDeclaration, getWorkflowInfo } from '../api/workflow';
+import { getApprovalHistory, approveDeclaration, rejectDeclaration, rollbackDeclaration, getWorkflowInfo, getApprovalReasonCategories } from '../api/workflow';
 import {
   getAttachments, downloadAttachment,
   getMissingCheck, getDuplicates,
@@ -21,7 +21,8 @@ import {
 import { StatusColorMap } from '../types';
 import type {
   Declaration, ApprovalRecord, Attachment,
-  MissingCheckResult, DuplicatesResult, WorkflowInfo
+  MissingCheckResult, DuplicatesResult, WorkflowInfo,
+  ApprovalReasonCategory
 } from '../types';
 
 const { TextArea } = Input;
@@ -41,6 +42,13 @@ function Approval() {
   const [form] = Form.useForm();
   const [rollbackForm] = Form.useForm();
 
+  const getReasonCategoryName = (code?: string): string => {
+    if (!code) return '';
+    const all = [...approveReasonCategories, ...rejectReasonCategories, ...rollbackReasonCategories];
+    const found = all.find(c => c.code === code);
+    return found ? found.name : code;
+  };
+
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [missingCheck, setMissingCheck] = useState<MissingCheckResult | null>(null);
   const [duplicatesResult, setDuplicatesResult] = useState<DuplicatesResult | null>(null);
@@ -48,6 +56,24 @@ function Approval() {
 
   const [workflowInfo, setWorkflowInfo] = useState<WorkflowInfo | null>(null);
   const [selectedRoleKey, setSelectedRoleKey] = useState<string>('');
+  const [approveReasonCategories, setApproveReasonCategories] = useState<ApprovalReasonCategory[]>([]);
+  const [rejectReasonCategories, setRejectReasonCategories] = useState<ApprovalReasonCategory[]>([]);
+  const [rollbackReasonCategories, setRollbackReasonCategories] = useState<ApprovalReasonCategory[]>([]);
+
+  const loadReasonCategories = async () => {
+    try {
+      const [approveRes, rejectRes, rollbackRes] = await Promise.all([
+        getApprovalReasonCategories('approve'),
+        getApprovalReasonCategories('reject'),
+        getApprovalReasonCategories('rollback')
+      ]);
+      if (approveRes.success) setApproveReasonCategories(approveRes.data || []);
+      if (rejectRes.success) setRejectReasonCategories(rejectRes.data || []);
+      if (rollbackRes.success) setRollbackReasonCategories(rollbackRes.data || []);
+    } catch (error) {
+      console.error('加载原因分类失败:', error);
+    }
+  };
 
   const loadData = async () => {
     setLoading(true);
@@ -72,6 +98,7 @@ function Approval() {
 
   useEffect(() => {
     loadData();
+    loadReasonCategories();
   }, []);
 
   const getRoleInfo = (decl: Declaration): { key: string; label: string; name: string } => {
@@ -149,7 +176,8 @@ function Approval() {
     const roleInfo = getRoleInfo(record);
     form.setFieldsValue({
       approver: roleInfo.label,
-      comment: ''
+      comment: '',
+      reason_category: undefined
     });
     setApproveModalVisible(true);
   };
@@ -160,7 +188,8 @@ function Approval() {
     const roleInfo = getRoleInfo(record);
     form.setFieldsValue({
       approver: roleInfo.label,
-      comment: ''
+      comment: '',
+      reason_category: undefined
     });
     setRejectModalVisible(true);
   };
@@ -171,7 +200,9 @@ function Approval() {
     const roleInfo = getRoleInfo(record);
     rollbackForm.setFieldsValue({
       approver: roleInfo.label,
-      comment: ''
+      comment: '',
+      reason_category: undefined,
+      target_step: undefined
     });
     setRollbackModalVisible(true);
   };
@@ -797,6 +828,11 @@ function Approval() {
                               {record.approver} - {dayjs(record.created_at).format('YYYY-MM-DD HH:mm')}
                             </span>
                           </div>
+                          {record.reason_category && (
+                            <div style={{ color: '#666', fontSize: 13 }}>
+                              原因分类：<Tag color="orange" style={{ margin: '2px 4px 2px 0' }}>{getReasonCategoryName(record.reason_category)}</Tag>
+                            </div>
+                          )}
                           {record.comment && (
                             <div style={{ color: '#666', fontSize: 13 }}>意见：{record.comment}</div>
                           )}
@@ -855,10 +891,24 @@ function Approval() {
             <Input placeholder="请输入审批人姓名" />
           </Form.Item>
           <Form.Item
+            name="reason_category"
+            label="通过原因分类"
+            rules={[{ required: true, message: '请选择通过原因分类' }]}
+          >
+            <Select placeholder="请选择通过原因分类">
+              {approveReasonCategories.map(cat => (
+                <Option key={cat.code} value={cat.code}>
+                  {cat.name}
+                </Option>
+              ))}
+            </Select>
+          </Form.Item>
+          <Form.Item
             name="comment"
             label="审批意见"
+            rules={[{ required: true, message: '请输入审批意见' }]}
           >
-            <TextArea rows={4} placeholder="请输入审批意见（可选）" />
+            <TextArea rows={4} placeholder="请输入审批意见" />
           </Form.Item>
           {workflowInfo?.current_step && (
             <Alert
@@ -891,6 +941,19 @@ function Approval() {
             rules={[{ required: true, message: '请输入审批人姓名' }]}
           >
             <Input placeholder="请输入审批人姓名" />
+          </Form.Item>
+          <Form.Item
+            name="reason_category"
+            label="驳回原因分类"
+            rules={[{ required: true, message: '请选择驳回原因分类' }]}
+          >
+            <Select placeholder="请选择驳回原因分类">
+              {rejectReasonCategories.map(cat => (
+                <Option key={cat.code} value={cat.code}>
+                  {cat.name}
+                </Option>
+              ))}
+            </Select>
           </Form.Item>
           <Form.Item
             name="comment"
@@ -941,6 +1004,19 @@ function Approval() {
                   <Option value={1}>初审（退回至初审步骤）</Option>
                 </>
               )}
+            </Select>
+          </Form.Item>
+          <Form.Item
+            name="reason_category"
+            label="退回原因分类"
+            rules={[{ required: true, message: '请选择退回原因分类' }]}
+          >
+            <Select placeholder="请选择退回原因分类">
+              {rollbackReasonCategories.map(cat => (
+                <Option key={cat.code} value={cat.code}>
+                  {cat.name}
+                </Option>
+              ))}
             </Select>
           </Form.Item>
           <Form.Item

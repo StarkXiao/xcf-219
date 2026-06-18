@@ -101,6 +101,23 @@ router.get('/status-options', (req, res) => {
   res.json({ success: true, data: statuses });
 });
 
+router.get('/reason-categories', (req, res) => {
+  try {
+    const { action_type } = req.query;
+    let sql = 'SELECT * FROM approval_reason_categories WHERE is_active = 1';
+    const params = [];
+    if (action_type) {
+      sql += ' AND action_type = ?';
+      params.push(action_type);
+    }
+    sql += ' ORDER BY action_type, sort_order, id';
+    const categories = all(sql, params);
+    res.json({ success: true, data: categories });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
 router.get('/declaration/:declarationId/workflow-info', (req, res) => {
   try {
     const declaration = get('SELECT * FROM declarations WHERE id = ? AND is_deleted = 0', [req.params.declarationId]);
@@ -173,9 +190,16 @@ router.get('/declaration/:declarationId/history', (req, res) => {
 
 router.post('/declaration/:declarationId/approve', (req, res) => {
   try {
-    const { approver, comment, step } = req.body;
+    const { approver, comment, reason_category, step } = req.body;
     const declarationId = req.params.declarationId;
     const user = getCurrentUser(req);
+
+    if (!comment || !comment.trim()) {
+      return res.status(400).json({ success: false, message: '审批意见为必填项' });
+    }
+    if (!reason_category) {
+      return res.status(400).json({ success: false, message: '请选择通过原因分类' });
+    }
 
     const declaration = get('SELECT * FROM declarations WHERE id = ? AND is_deleted = 0', [declarationId]);
     if (!declaration) {
@@ -203,9 +227,9 @@ router.post('/declaration/:declarationId/approve', (req, res) => {
     `, [nextStatus, nextStepOrder, declarationId]);
 
     run(`
-      INSERT INTO approval_records (declaration_id, step, step_name, step_role, approver, action, comment)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `, [declarationId, currentStep.step_order, currentStep.name, currentStep.role, approver || currentStep.role, '通过', comment || '']);
+      INSERT INTO approval_records (declaration_id, step, step_name, step_role, approver, action, comment, reason_category)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `, [declarationId, currentStep.step_order, currentStep.name, currentStep.role, approver || currentStep.role, '通过', comment.trim(), reason_category]);
 
     const updated = get('SELECT * FROM declarations WHERE id = ?', [declarationId]);
     const versionResult = saveVersion(null, declarationId, updated, SAVE_TYPES.STATUS_CHANGE, user,
@@ -232,9 +256,16 @@ router.post('/declaration/:declarationId/approve', (req, res) => {
 
 router.post('/declaration/:declarationId/reject', (req, res) => {
   try {
-    const { approver, comment, step } = req.body;
+    const { approver, comment, reason_category, step } = req.body;
     const declarationId = req.params.declarationId;
     const user = getCurrentUser(req);
+
+    if (!comment || !comment.trim()) {
+      return res.status(400).json({ success: false, message: '驳回原因为必填项' });
+    }
+    if (!reason_category) {
+      return res.status(400).json({ success: false, message: '请选择驳回原因分类' });
+    }
 
     const declaration = get('SELECT * FROM declarations WHERE id = ? AND is_deleted = 0', [declarationId]);
     if (!declaration) {
@@ -259,9 +290,9 @@ router.post('/declaration/:declarationId/reject', (req, res) => {
     `, [declarationId]);
 
     run(`
-      INSERT INTO approval_records (declaration_id, step, step_name, step_role, approver, action, comment)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `, [declarationId, step || declaration.current_step, stepName, stepRole, approver || stepRole, '驳回', comment || '']);
+      INSERT INTO approval_records (declaration_id, step, step_name, step_role, approver, action, comment, reason_category)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `, [declarationId, step || declaration.current_step, stepName, stepRole, approver || stepRole, '驳回', comment.trim(), reason_category]);
 
     const updated = get('SELECT * FROM declarations WHERE id = ?', [declarationId]);
     const versionResult = saveVersion(null, declarationId, updated, SAVE_TYPES.STATUS_CHANGE, user,
@@ -284,9 +315,16 @@ router.post('/declaration/:declarationId/reject', (req, res) => {
 
 router.post('/declaration/:declarationId/rollback', (req, res) => {
   try {
-    const { approver, comment, target_step } = req.body;
+    const { approver, comment, reason_category, target_step } = req.body;
     const declarationId = req.params.declarationId;
     const user = getCurrentUser(req);
+
+    if (!comment || !comment.trim()) {
+      return res.status(400).json({ success: false, message: '退回原因为必填项' });
+    }
+    if (!reason_category) {
+      return res.status(400).json({ success: false, message: '请选择退回原因分类' });
+    }
 
     const declaration = get('SELECT * FROM declarations WHERE id = ? AND is_deleted = 0', [declarationId]);
     if (!declaration) {
@@ -346,9 +384,9 @@ router.post('/declaration/:declarationId/rollback', (req, res) => {
     `, [rollbackStatus, rollbackStepOrder, declarationId]);
 
     run(`
-      INSERT INTO approval_records (declaration_id, step, step_name, step_role, approver, action, comment)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `, [declarationId, declaration.current_step, currentStep.name, currentStep.role, approver || currentStep.role, '退回', comment || '']);
+      INSERT INTO approval_records (declaration_id, step, step_name, step_role, approver, action, comment, reason_category)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `, [declarationId, declaration.current_step, currentStep.name, currentStep.role, approver || currentStep.role, '退回', comment.trim(), reason_category]);
 
     const updated = get('SELECT * FROM declarations WHERE id = ?', [declarationId]);
     const versionResult = saveVersion(null, declarationId, updated, SAVE_TYPES.STATUS_CHANGE, user,

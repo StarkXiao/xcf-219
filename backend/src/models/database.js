@@ -227,6 +227,18 @@ function initDatabase() {
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (guideline_id) REFERENCES guidelines(id) ON DELETE CASCADE
     );
+
+    CREATE TABLE IF NOT EXISTS approval_reason_categories (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      action_type TEXT NOT NULL,
+      code TEXT NOT NULL,
+      name TEXT NOT NULL,
+      description TEXT,
+      sort_order INTEGER DEFAULT 0,
+      is_active INTEGER DEFAULT 1,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
   `);
 
   safeAddColumn('attachments', 'material_type_id', 'INTEGER REFERENCES material_types(id)');
@@ -234,6 +246,7 @@ function initDatabase() {
   safeAddColumn('declarations', 'workflow_config_id', 'INTEGER REFERENCES workflow_configs(id)');
   safeAddColumn('approval_records', 'step_name', 'TEXT');
   safeAddColumn('approval_records', 'step_role', 'TEXT');
+  safeAddColumn('approval_records', 'reason_category', 'TEXT');
   safeCreateIndex('idx_attachments_hash', 'attachments', 'file_hash');
   safeCreateIndex('idx_material_types_guideline', 'material_types', 'guideline_id');
   safeCreateIndex('idx_workflow_configs_guideline', 'workflow_configs', 'guideline_id');
@@ -241,6 +254,7 @@ function initDatabase() {
   safeCreateIndex('idx_declarations_workflow_config', 'declarations', 'workflow_config_id');
   safeCreateIndex('idx_declaration_templates_guideline', 'declaration_templates', 'guideline_id');
   safeCreateIndex('idx_faqs_guideline', 'faqs', 'guideline_id');
+  safeCreateIndex('idx_approval_reason_categories_action', 'approval_reason_categories', 'action_type');
 
   const guidelineCount = get('SELECT COUNT(*) as count FROM guidelines');
   if (guidelineCount.count === 0) {
@@ -441,6 +455,34 @@ function initDatabase() {
       5,
       '2023-09-01 11:00:00'
     );
+  }
+
+  const reasonCategoryCount = get('SELECT COUNT(*) as count FROM approval_reason_categories');
+  if (reasonCategoryCount.count === 0) {
+    const insertReasonCategory = db.prepare(`
+      INSERT INTO approval_reason_categories (action_type, code, name, description, sort_order)
+      VALUES (?, ?, ?, ?, ?)
+    `);
+
+    insertReasonCategory.run('approve', 'material_complete', '材料齐全合规', '申报材料完整，符合要求', 1);
+    insertReasonCategory.run('approve', 'qualified', '符合立项条件', '企业资质和项目内容均符合申报指南要求', 2);
+    insertReasonCategory.run('approve', 'excellent', '项目优秀', '项目创新性强，具有良好的市场前景', 3);
+    insertReasonCategory.run('approve', 'policy_support', '政策扶持范围', '属于政策重点支持领域', 4);
+    insertReasonCategory.run('approve', 'other_approve', '其他', '其他通过原因', 99);
+
+    insertReasonCategory.run('reject', 'material_missing', '材料缺失', '缺少必要的申报材料', 1);
+    insertReasonCategory.run('reject', 'material_invalid', '材料无效/不规范', '提交的材料不符合要求、已过期或信息错误', 2);
+    insertReasonCategory.run('reject', 'not_qualified', '不符合申报条件', '企业资质或项目内容不符合申报指南要求', 3);
+    insertReasonCategory.run('reject', 'duplicate', '重复申报', '同一项目或内容已申报过其他项目', 4);
+    insertReasonCategory.run('reject', 'info_false', '信息不实', '申报材料存在虚假信息', 5);
+    insertReasonCategory.run('reject', 'beyond_deadline', '超期申报', '超过申报截止日期', 6);
+    insertReasonCategory.run('reject', 'other_reject', '其他', '其他驳回原因', 99);
+
+    insertReasonCategory.run('rollback', 'material_incomplete', '材料不完整', '需要补充或完善材料', 1);
+    insertReasonCategory.run('rollback', 'content_modify', '内容需修改', '申报内容需要调整或补充说明', 2);
+    insertReasonCategory.run('rollback', 'format_issue', '格式问题', '材料格式、排版不符合规范', 3);
+    insertReasonCategory.run('rollback', 'clarification_needed', '需补充说明', '需要申请人对相关内容进行澄清说明', 4);
+    insertReasonCategory.run('rollback', 'other_rollback', '其他', '其他退回原因', 99);
   }
 
   console.log('数据库初始化完成');

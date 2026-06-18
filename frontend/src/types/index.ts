@@ -340,6 +340,18 @@ export interface DuplicatesResult {
   potential_duplicates: DuplicateGroup;
 }
 
+export interface ApprovalReasonCategory {
+  id: number;
+  action_type: 'approve' | 'reject' | 'rollback';
+  code: string;
+  name: string;
+  description?: string;
+  sort_order: number;
+  is_active: number;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface ApprovalRecord {
   id: number;
   declaration_id: number;
@@ -349,6 +361,7 @@ export interface ApprovalRecord {
   approver: string;
   action: string;
   comment: string;
+  reason_category?: string;
   created_at: string;
 }
 
