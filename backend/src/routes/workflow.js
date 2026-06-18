@@ -8,22 +8,6 @@ function getCurrentUser(req) {
   return req.headers['x-user'] || 'anonymous';
 }
 
-function validateApprovalAction(actionType, comment, reasonCategory) {
-  const actionLabels = {
-    approve: '审批意见',
-    reject: '驳回原因',
-    rollback: '退回原因'
-  };
-  const label = actionLabels[actionType] || '原因';
-  if (!comment || !comment.trim()) {
-    return `${label}为必填项`;
-  }
-  if (!reasonCategory) {
-    return '请选择原因分类';
-  }
-  return null;
-}
-
 function getWorkflowConfig(declaration) {
   if (declaration.workflow_config_id) {
     const config = get('SELECT * FROM workflow_configs WHERE id = ?', [declaration.workflow_config_id]);
@@ -37,10 +21,7 @@ function getWorkflowConfig(declaration) {
         steps: steps.map(s => ({
           ...s,
           allow_rollback: !!s.allow_rollback,
-          rollback_targets: JSON.parse(s.rollback_targets || '[]'),
-          description: s.description || '',
-          expected_duration: s.expected_duration || 0,
-          responsible_person: s.responsible_person || ''
+          rollback_targets: JSON.parse(s.rollback_targets || '[]')
         }))
       };
     }
@@ -58,10 +39,7 @@ function getWorkflowConfig(declaration) {
         steps: steps.map(s => ({
           ...s,
           allow_rollback: !!s.allow_rollback,
-          rollback_targets: JSON.parse(s.rollback_targets || '[]'),
-          description: s.description || '',
-          expected_duration: s.expected_duration || 0,
-          responsible_person: s.responsible_person || ''
+          rollback_targets: JSON.parse(s.rollback_targets || '[]')
         }))
       };
     }
@@ -75,9 +53,9 @@ function getFallbackConfig() {
     id: null,
     name: '默认审批流',
     steps: [
-      { step_order: 1, name: '初审', step_key: 'initial_review', role: '初审员', pending_status: 'submitted', approved_status: 'first_reviewed', allow_rollback: true, rollback_targets: [0], description: '对申报材料进行形式审查，检查材料完整性和规范性', expected_duration: 3, responsible_person: '初审员' },
-      { step_order: 2, name: '复审', step_key: 'second_review', role: '复审员', pending_status: 'first_reviewed', approved_status: 'second_reviewed', allow_rollback: true, rollback_targets: [1, 0], description: '业务部门对项目内容进行实质性审核', expected_duration: 5, responsible_person: '复审员' },
-      { step_order: 3, name: '终审', step_key: 'final_review', role: '终审员', pending_status: 'second_reviewed', approved_status: 'approved', allow_rollback: true, rollback_targets: [2, 1, 0], description: '领导最终审批决策', expected_duration: 3, responsible_person: '终审员' }
+      { step_order: 1, name: '初审', step_key: 'initial_review', role: '初审员', pending_status: 'submitted', approved_status: 'first_reviewed', allow_rollback: true, rollback_targets: [0] },
+      { step_order: 2, name: '复审', step_key: 'second_review', role: '复审员', pending_status: 'first_reviewed', approved_status: 'second_reviewed', allow_rollback: true, rollback_targets: [1, 0] },
+      { step_order: 3, name: '终审', step_key: 'final_review', role: '终审员', pending_status: 'second_reviewed', approved_status: 'approved', allow_rollback: true, rollback_targets: [2, 1, 0] }
     ]
   };
 }
@@ -121,23 +99,6 @@ router.get('/status-options', (req, res) => {
     { value: 'rejected', label: '已驳回' }
   ];
   res.json({ success: true, data: statuses });
-});
-
-router.get('/reason-categories', (req, res) => {
-  try {
-    const { action_type } = req.query;
-    let sql = 'SELECT * FROM approval_reason_categories WHERE is_active = 1';
-    const params = [];
-    if (action_type) {
-      sql += ' AND action_type = ?';
-      params.push(action_type);
-    }
-    sql += ' ORDER BY action_type, sort_order, id';
-    const categories = all(sql, params);
-    res.json({ success: true, data: categories });
-  } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
-  }
 });
 
 router.get('/declaration/:declarationId/workflow-info', (req, res) => {
@@ -212,14 +173,9 @@ router.get('/declaration/:declarationId/history', (req, res) => {
 
 router.post('/declaration/:declarationId/approve', (req, res) => {
   try {
-    const { approver, comment, reason_category, step } = req.body;
+    const { approver, comment, step } = req.body;
     const declarationId = req.params.declarationId;
     const user = getCurrentUser(req);
-
-    const validationError = validateApprovalAction('approve', comment, reason_category);
-    if (validationError) {
-      return res.status(400).json({ success: false, message: validationError });
-    }
 
     const declaration = get('SELECT * FROM declarations WHERE id = ? AND is_deleted = 0', [declarationId]);
     if (!declaration) {
@@ -247,9 +203,9 @@ router.post('/declaration/:declarationId/approve', (req, res) => {
     `, [nextStatus, nextStepOrder, declarationId]);
 
     run(`
-      INSERT INTO approval_records (declaration_id, step, step_name, step_role, approver, action, comment, reason_category)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `, [declarationId, currentStep.step_order, currentStep.name, currentStep.role, approver || currentStep.role, '通过', comment.trim(), reason_category]);
+      INSERT INTO approval_records (declaration_id, step, step_name, step_role, approver, action, comment)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `, [declarationId, currentStep.step_order, currentStep.name, currentStep.role, approver || currentStep.role, '通过', comment || '']);
 
     const updated = get('SELECT * FROM declarations WHERE id = ?', [declarationId]);
     const versionResult = saveVersion(null, declarationId, updated, SAVE_TYPES.STATUS_CHANGE, user,
@@ -276,14 +232,9 @@ router.post('/declaration/:declarationId/approve', (req, res) => {
 
 router.post('/declaration/:declarationId/reject', (req, res) => {
   try {
-    const { approver, comment, reason_category, step } = req.body;
+    const { approver, comment, step } = req.body;
     const declarationId = req.params.declarationId;
     const user = getCurrentUser(req);
-
-    const validationError = validateApprovalAction('reject', comment, reason_category);
-    if (validationError) {
-      return res.status(400).json({ success: false, message: validationError });
-    }
 
     const declaration = get('SELECT * FROM declarations WHERE id = ? AND is_deleted = 0', [declarationId]);
     if (!declaration) {
@@ -303,14 +254,14 @@ router.post('/declaration/:declarationId/reject', (req, res) => {
 
     run(`
       UPDATE declarations
-      SET status = 'rejected', current_step = 5, last_rejected_at = CURRENT_TIMESTAMP, last_reject_reason = ?, updated_at = CURRENT_TIMESTAMP
+      SET status = 'rejected', current_step = 5, updated_at = CURRENT_TIMESTAMP
       WHERE id = ?
-    `, [comment.trim(), declarationId]);
+    `, [declarationId]);
 
     run(`
-      INSERT INTO approval_records (declaration_id, step, step_name, step_role, approver, action, comment, reason_category)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `, [declarationId, step || declaration.current_step, stepName, stepRole, approver || stepRole, '驳回', comment.trim(), reason_category]);
+      INSERT INTO approval_records (declaration_id, step, step_name, step_role, approver, action, comment)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `, [declarationId, step || declaration.current_step, stepName, stepRole, approver || stepRole, '驳回', comment || '']);
 
     const updated = get('SELECT * FROM declarations WHERE id = ?', [declarationId]);
     const versionResult = saveVersion(null, declarationId, updated, SAVE_TYPES.STATUS_CHANGE, user,
@@ -333,14 +284,9 @@ router.post('/declaration/:declarationId/reject', (req, res) => {
 
 router.post('/declaration/:declarationId/rollback', (req, res) => {
   try {
-    const { approver, comment, reason_category, target_step } = req.body;
+    const { approver, comment, target_step } = req.body;
     const declarationId = req.params.declarationId;
     const user = getCurrentUser(req);
-
-    const validationError = validateApprovalAction('rollback', comment, reason_category);
-    if (validationError) {
-      return res.status(400).json({ success: false, message: validationError });
-    }
 
     const declaration = get('SELECT * FROM declarations WHERE id = ? AND is_deleted = 0', [declarationId]);
     if (!declaration) {
@@ -400,9 +346,9 @@ router.post('/declaration/:declarationId/rollback', (req, res) => {
     `, [rollbackStatus, rollbackStepOrder, declarationId]);
 
     run(`
-      INSERT INTO approval_records (declaration_id, step, step_name, step_role, approver, action, comment, reason_category)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `, [declarationId, declaration.current_step, currentStep.name, currentStep.role, approver || currentStep.role, '退回', comment.trim(), reason_category]);
+      INSERT INTO approval_records (declaration_id, step, step_name, step_role, approver, action, comment)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `, [declarationId, declaration.current_step, currentStep.name, currentStep.role, approver || currentStep.role, '退回', comment || '']);
 
     const updated = get('SELECT * FROM declarations WHERE id = ?', [declarationId]);
     const versionResult = saveVersion(null, declarationId, updated, SAVE_TYPES.STATUS_CHANGE, user,

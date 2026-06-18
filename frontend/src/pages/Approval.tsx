@@ -8,13 +8,11 @@ import {
   CheckOutlined, CloseOutlined, EyeOutlined, DownloadOutlined,
   PaperClipOutlined, FileSearchOutlined, FileDoneOutlined,
   WarningOutlined, FileProtectOutlined, CloudDownloadOutlined,
-  FolderOpenOutlined, RollbackOutlined, UserOutlined,
-  ClockCircleOutlined, InfoCircleOutlined, TeamOutlined,
-  CalendarOutlined, SyncOutlined
+  FolderOpenOutlined, RollbackOutlined
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { getDeclarations } from '../api/declarations';
-import { getApprovalHistory, approveDeclaration, rejectDeclaration, rollbackDeclaration, getWorkflowInfo, getApprovalReasonCategories } from '../api/workflow';
+import { getApprovalHistory, approveDeclaration, rejectDeclaration, rollbackDeclaration, getWorkflowInfo } from '../api/workflow';
 import {
   getAttachments, downloadAttachment,
   getMissingCheck, getDuplicates,
@@ -23,8 +21,7 @@ import {
 import { StatusColorMap } from '../types';
 import type {
   Declaration, ApprovalRecord, Attachment,
-  MissingCheckResult, DuplicatesResult, WorkflowInfo,
-  ApprovalReasonCategory
+  MissingCheckResult, DuplicatesResult, WorkflowInfo
 } from '../types';
 
 const { TextArea } = Input;
@@ -44,13 +41,6 @@ function Approval() {
   const [form] = Form.useForm();
   const [rollbackForm] = Form.useForm();
 
-  const getReasonCategoryName = (code?: string): string => {
-    if (!code) return '';
-    const all = [...approveReasonCategories, ...rejectReasonCategories, ...rollbackReasonCategories];
-    const found = all.find(c => c.code === code);
-    return found ? found.name : code;
-  };
-
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [missingCheck, setMissingCheck] = useState<MissingCheckResult | null>(null);
   const [duplicatesResult, setDuplicatesResult] = useState<DuplicatesResult | null>(null);
@@ -58,24 +48,6 @@ function Approval() {
 
   const [workflowInfo, setWorkflowInfo] = useState<WorkflowInfo | null>(null);
   const [selectedRoleKey, setSelectedRoleKey] = useState<string>('');
-  const [approveReasonCategories, setApproveReasonCategories] = useState<ApprovalReasonCategory[]>([]);
-  const [rejectReasonCategories, setRejectReasonCategories] = useState<ApprovalReasonCategory[]>([]);
-  const [rollbackReasonCategories, setRollbackReasonCategories] = useState<ApprovalReasonCategory[]>([]);
-
-  const loadReasonCategories = async () => {
-    try {
-      const [approveRes, rejectRes, rollbackRes] = await Promise.all([
-        getApprovalReasonCategories('approve'),
-        getApprovalReasonCategories('reject'),
-        getApprovalReasonCategories('rollback')
-      ]);
-      if (approveRes.success) setApproveReasonCategories(approveRes.data || []);
-      if (rejectRes.success) setRejectReasonCategories(rejectRes.data || []);
-      if (rollbackRes.success) setRollbackReasonCategories(rollbackRes.data || []);
-    } catch (error) {
-      console.error('加载原因分类失败:', error);
-    }
-  };
 
   const loadData = async () => {
     setLoading(true);
@@ -100,7 +72,6 @@ function Approval() {
 
   useEffect(() => {
     loadData();
-    loadReasonCategories();
   }, []);
 
   const getRoleInfo = (decl: Declaration): { key: string; label: string; name: string } => {
@@ -178,8 +149,7 @@ function Approval() {
     const roleInfo = getRoleInfo(record);
     form.setFieldsValue({
       approver: roleInfo.label,
-      comment: '',
-      reason_category: undefined
+      comment: ''
     });
     setApproveModalVisible(true);
   };
@@ -190,8 +160,7 @@ function Approval() {
     const roleInfo = getRoleInfo(record);
     form.setFieldsValue({
       approver: roleInfo.label,
-      comment: '',
-      reason_category: undefined
+      comment: ''
     });
     setRejectModalVisible(true);
   };
@@ -202,9 +171,7 @@ function Approval() {
     const roleInfo = getRoleInfo(record);
     rollbackForm.setFieldsValue({
       approver: roleInfo.label,
-      comment: '',
-      reason_category: undefined,
-      target_step: undefined
+      comment: ''
     });
     setRollbackModalVisible(true);
   };
@@ -272,32 +239,6 @@ function Approval() {
     if (bytes < 1024) return bytes + ' B';
     if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(2) + ' KB';
     return (bytes / (1024 * 1024)).toFixed(2) + ' MB';
-  };
-
-  const formatDuration = (days: number) => {
-    if (!days || days <= 0) return '-';
-    if (days < 1) return `${Math.round(days * 24)}小时`;
-    return `${days}个工作日`;
-  };
-
-  const getCurrentStepWaitTime = (declaration: Declaration) => {
-    if (!declaration || !declaration.updated_at) return null;
-    const now = dayjs();
-    const updatedAt = dayjs(declaration.updated_at);
-    const diffDays = now.diff(updatedAt, 'day');
-    const diffHours = now.diff(updatedAt, 'hour');
-    if (diffDays > 0) return `${diffDays}天${diffHours % 24}小时`;
-    if (diffHours > 0) return `${diffHours}小时`;
-    return '刚更新';
-  };
-
-  const getEstimatedCompletionDate = () => {
-    if (!selectedDeclaration || !workflowInfo || !workflowInfo.current_step) return null;
-    const currentStep = workflowInfo.current_step;
-    const duration = currentStep.expected_duration || 0;
-    if (duration <= 0) return null;
-    const updatedAt = dayjs(selectedDeclaration.updated_at);
-    return updatedAt.add(duration, 'day').format('YYYY-MM-DD');
   };
 
   const getFileIcon = (ext: string) => {
@@ -791,68 +732,6 @@ function Approval() {
               key="info"
             >
               <div>
-                {workflowInfo?.current_step && (
-                  <div style={{
-                    padding: 16,
-                    background: 'linear-gradient(135deg, #f0f7ff 0%, #e6f4ff 100%)',
-                    borderRadius: 8,
-                    border: '1px solid #bae0ff',
-                    marginBottom: 16
-                  }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
-                      <div style={{
-                        width: 40,
-                        height: 40,
-                        borderRadius: '50%',
-                        background: '#e6f4ff',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center'
-                      }}>
-                        <SyncOutlined spin style={{ fontSize: 20, color: '#1890ff' }} />
-                      </div>
-                      <div style={{ flex: 1 }}>
-                        <div style={{ fontSize: 15, fontWeight: 600, color: '#333' }}>
-                          当前环节：{workflowInfo.current_step.name}
-                        </div>
-                        <div style={{ fontSize: 13, color: '#666' }}>
-                          {workflowInfo.current_step.description || '正在处理中...'}
-                        </div>
-                      </div>
-                    </div>
-                    <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                        <UserOutlined style={{ color: '#1890ff' }} />
-                        <span style={{ fontSize: 12, color: '#666' }}>责任人：</span>
-                        <span style={{ fontSize: 12, color: '#333', fontWeight: 500 }}>
-                          {workflowInfo.current_step.responsible_person || workflowInfo.current_step.role}
-                        </span>
-                      </div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                        <TeamOutlined style={{ color: '#52c41a' }} />
-                        <span style={{ fontSize: 12, color: '#666' }}>角色：</span>
-                        <span style={{ fontSize: 12, color: '#333', fontWeight: 500 }}>
-                          {workflowInfo.current_step.role}
-                        </span>
-                      </div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                        <ClockCircleOutlined style={{ color: '#faad14' }} />
-                        <span style={{ fontSize: 12, color: '#666' }}>预计时长：</span>
-                        <span style={{ fontSize: 12, color: '#333', fontWeight: 500 }}>
-                          {formatDuration(workflowInfo.current_step.expected_duration || 0)}
-                        </span>
-                      </div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                        <CalendarOutlined style={{ color: '#722ed1' }} />
-                        <span style={{ fontSize: 12, color: '#666' }}>预计完成：</span>
-                        <span style={{ fontSize: 12, color: '#333', fontWeight: 500 }}>
-                          {getEstimatedCompletionDate() || '-'}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
                 <p><strong>项目名称：</strong>{selectedDeclaration.title}</p>
                 <p><strong>申请人：</strong>{selectedDeclaration.applicant}</p>
                 <p><strong>企业名称：</strong>{selectedDeclaration.company}</p>
@@ -862,11 +741,6 @@ function Approval() {
                   <Tag color={StatusColorMap[selectedDeclaration.status as keyof typeof StatusColorMap] || 'blue'}>
                     {getStatusLabel(selectedDeclaration)}
                   </Tag>
-                  {selectedDeclaration && (
-                    <Tag color="default" style={{ marginLeft: 4 }}>
-                      已等待 {getCurrentStepWaitTime(selectedDeclaration)}
-                    </Tag>
-                  )}
                 </p>
 
                 {workflowInfo && workflowInfo.steps.length > 0 && (
@@ -876,36 +750,15 @@ function Approval() {
                       size="small"
                       current={workflowInfo.current_step ? workflowInfo.steps.findIndex(s => s.step_order === workflowInfo.current_step!.step_order) : -1}
                       items={[
-                        { title: '草稿', description: '申请人', subTitle: <Tag style={{ fontSize: 11, padding: '0 6px', height: 20, lineHeight: '20px' }}>申请人</Tag> },
+                        { title: '草稿', description: '申请人' },
                         ...workflowInfo.steps.map(s => ({
                           title: s.name,
-                          description: (
-                            <Tooltip title={s.description || s.role}>
-                              <span>{s.role}</span>
-                            </Tooltip>
-                          ),
-                          subTitle: (
-                            <div style={{ fontSize: 11, color: '#999', marginTop: 2 }}>
-                              {s.expected_duration ? `预计${formatDuration(s.expected_duration)}` : ''}
-                            </div>
-                          )
+                          description: s.role
                         })),
                         { title: '已立项', description: '' }
                       ]}
                       style={{ marginTop: 12, padding: '0 8px' }}
                     />
-                  </div>
-                )}
-
-                {workflowInfo?.current_step?.description && (
-                  <div style={{ marginTop: 16, padding: 12, background: '#fffbe6', borderRadius: 4, border: '1px solid #ffe58f' }}>
-                    <div style={{ fontSize: 13, fontWeight: 500, color: '#d48806', marginBottom: 4 }}>
-                      <InfoCircleOutlined style={{ marginRight: 4 }} />
-                      节点说明
-                    </div>
-                    <div style={{ fontSize: 13, color: '#666' }}>
-                      {workflowInfo.current_step.description}
-                    </div>
                   </div>
                 )}
 
@@ -944,11 +797,6 @@ function Approval() {
                               {record.approver} - {dayjs(record.created_at).format('YYYY-MM-DD HH:mm')}
                             </span>
                           </div>
-                          {record.reason_category && (
-                            <div style={{ color: '#666', fontSize: 13 }}>
-                              原因分类：<Tag color="orange" style={{ margin: '2px 4px 2px 0' }}>{getReasonCategoryName(record.reason_category)}</Tag>
-                            </div>
-                          )}
                           {record.comment && (
                             <div style={{ color: '#666', fontSize: 13 }}>意见：{record.comment}</div>
                           )}
@@ -1007,66 +855,23 @@ function Approval() {
             <Input placeholder="请输入审批人姓名" />
           </Form.Item>
           <Form.Item
-            name="reason_category"
-            label="通过原因分类"
-            rules={[{ required: true, message: '请选择通过原因分类' }]}
-          >
-            <Select placeholder="请选择通过原因分类">
-              {approveReasonCategories.map(cat => (
-                <Option key={cat.code} value={cat.code}>
-                  {cat.name}
-                </Option>
-              ))}
-            </Select>
-          </Form.Item>
-          <Form.Item
             name="comment"
             label="审批意见"
-            rules={[{ required: true, message: '请输入审批意见' }]}
           >
-            <TextArea rows={4} placeholder="请输入审批意见" />
+            <TextArea rows={4} placeholder="请输入审批意见（可选）" />
           </Form.Item>
           {workflowInfo?.current_step && (
-            <div>
-              <Alert
-                type="info"
-                showIcon
-                message={`当前步骤：${workflowInfo.current_step.name}（${workflowInfo.current_step.role}）`}
-                description={
-                  workflowInfo.current_step.approved_status === 'approved'
-                    ? '通过后将直接立项'
-                    : `通过后将流转至下一审批环节`
-                }
-                style={{ marginBottom: 8 }}
-              />
-              {workflowInfo.current_step.description && (
-                <Alert
-                  type="warning"
-                  showIcon
-                  message="节点说明"
-                  description={workflowInfo.current_step.description}
-                  style={{ marginBottom: 8 }}
-                />
-              )}
-              <div style={{
-                padding: 8,
-                background: '#f5f5f5',
-                borderRadius: 4,
-                fontSize: 12,
-                color: '#666'
-              }}>
-                <Space split={<span style={{ color: '#d9d9d9' }}>|</span>}>
-                  <span>
-                    <UserOutlined style={{ marginRight: 4 }} />
-                    责任人：{workflowInfo.current_step.responsible_person || workflowInfo.current_step.role}
-                  </span>
-                  <span>
-                    <ClockCircleOutlined style={{ marginRight: 4 }} />
-                    预计处理：{formatDuration(workflowInfo.current_step.expected_duration || 0)}
-                  </span>
-                </Space>
-              </div>
-            </div>
+            <Alert
+              type="info"
+              showIcon
+              message={`当前步骤：${workflowInfo.current_step.name}（${workflowInfo.current_step.role}）`}
+              description={
+                workflowInfo.current_step.approved_status === 'approved'
+                  ? '通过后将直接立项'
+                  : `通过后将流转至下一审批环节`
+              }
+              style={{ marginTop: 8 }}
+            />
           )}
         </Form>
       </Modal>
@@ -1086,19 +891,6 @@ function Approval() {
             rules={[{ required: true, message: '请输入审批人姓名' }]}
           >
             <Input placeholder="请输入审批人姓名" />
-          </Form.Item>
-          <Form.Item
-            name="reason_category"
-            label="驳回原因分类"
-            rules={[{ required: true, message: '请选择驳回原因分类' }]}
-          >
-            <Select placeholder="请选择驳回原因分类">
-              {rejectReasonCategories.map(cat => (
-                <Option key={cat.code} value={cat.code}>
-                  {cat.name}
-                </Option>
-              ))}
-            </Select>
           </Form.Item>
           <Form.Item
             name="comment"
@@ -1152,19 +944,6 @@ function Approval() {
             </Select>
           </Form.Item>
           <Form.Item
-            name="reason_category"
-            label="退回原因分类"
-            rules={[{ required: true, message: '请选择退回原因分类' }]}
-          >
-            <Select placeholder="请选择退回原因分类">
-              {rollbackReasonCategories.map(cat => (
-                <Option key={cat.code} value={cat.code}>
-                  {cat.name}
-                </Option>
-              ))}
-            </Select>
-          </Form.Item>
-          <Form.Item
             name="comment"
             label="退回原因"
             rules={[{ required: true, message: '请输入退回原因' }]}
@@ -1172,42 +951,13 @@ function Approval() {
             <TextArea rows={4} placeholder="请输入退回原因" />
           </Form.Item>
           {workflowInfo?.current_step && (
-            <div>
-              <Alert
-                type="warning"
-                showIcon
-                message={`当前步骤：${workflowInfo.current_step.name}`}
-                description="退回后，申报将回到目标步骤重新审批"
-                style={{ marginBottom: 8 }}
-              />
-              {workflowInfo.current_step.description && (
-                <Alert
-                  type="info"
-                  showIcon
-                  message="节点说明"
-                  description={workflowInfo.current_step.description}
-                  style={{ marginBottom: 8 }}
-                />
-              )}
-              <div style={{
-                padding: 8,
-                background: '#f5f5f5',
-                borderRadius: 4,
-                fontSize: 12,
-                color: '#666'
-              }}>
-                <Space split={<span style={{ color: '#d9d9d9' }}>|</span>}>
-                  <span>
-                    <UserOutlined style={{ marginRight: 4 }} />
-                    责任人：{workflowInfo.current_step.responsible_person || workflowInfo.current_step.role}
-                  </span>
-                  <span>
-                    <ClockCircleOutlined style={{ marginRight: 4 }} />
-                    预计处理：{formatDuration(workflowInfo.current_step.expected_duration || 0)}
-                  </span>
-                </Space>
-              </div>
-            </div>
+            <Alert
+              type="warning"
+              showIcon
+              message={`当前步骤：${workflowInfo.current_step.name}`}
+              description="退回后，申报将回到目标步骤重新审批"
+              style={{ marginTop: 8 }}
+            />
           )}
         </Form>
       </Modal>

@@ -1,20 +1,31 @@
 import axios from 'axios';
 
-const api = axios.create({
+const request = axios.create({
   baseURL: '/api',
-  timeout: 10000,
-  headers: {
-    'Content-Type': 'application/json',
-    'x-user': 'demo-user'
-  }
+  timeout: 30000
 });
 
-api.interceptors.response.use(
-  (response) => response.data,
+request.interceptors.request.use(
+  (config) => {
+    const user = localStorage.getItem('currentUser');
+    if (user) {
+      config.headers['x-user'] = user;
+    }
+    return config;
+  },
+  (error) => {
+    return Promise.reject(error);
+  }
+);
+
+request.interceptors.response.use(
+  (response) => {
+    return response.data;
+  },
   (error) => {
     console.error('API Error:', error);
     return Promise.reject(error);
   }
 );
 
-export default api;
+export default request;

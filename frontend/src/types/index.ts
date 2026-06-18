@@ -499,6 +499,193 @@ export const StatusColorMap: Record<string, string> = {
   completed: 'success'
 };
 
+export type PhaseStatus = 'pending' | 'in_progress' | 'completed' | 'delayed';
+
+export interface ProjectPhaseInstance {
+  id: number;
+  declaration_id: number;
+  phase_id: number | null;
+  phase_name: string;
+  phase_code: string | null;
+  phase_description: string | null;
+  sort_order: number;
+  status: PhaseStatus;
+  progress: number;
+  start_date: string | null;
+  planned_end_date: string | null;
+  actual_end_date: string | null;
+  expected_duration: number;
+  responsible_person: string | null;
+  remarks: string | null;
+  created_at: string;
+  updated_at: string;
+  deliverable_count?: number;
+  submitted_deliverable_count?: number;
+  acceptance_count?: number;
+  passed_acceptance_count?: number;
+}
+
+export const PhaseStatusMap: Record<PhaseStatus, string> = {
+  pending: '未开始',
+  in_progress: '进行中',
+  completed: '已完成',
+  delayed: '已延期'
+};
+
+export const PhaseStatusColorMap: Record<PhaseStatus, string> = {
+  pending: 'default',
+  in_progress: 'processing',
+  completed: 'success',
+  delayed: 'warning'
+};
+
+export type DeliverableStatus = 'pending' | 'submitted' | 'reviewing' | 'approved' | 'rejected';
+
+export interface PhaseDeliverable {
+  id: number;
+  phase_instance_id: number;
+  name: string;
+  description: string | null;
+  required: number;
+  sort_order: number;
+  submitted: number;
+  submitted_at: string | null;
+  submitted_by: string | null;
+  status: DeliverableStatus;
+  remark: string | null;
+  created_at: string;
+  updated_at: string;
+  attachment_count?: number;
+}
+
+export const DeliverableStatusMap: Record<DeliverableStatus, string> = {
+  pending: '待提交',
+  submitted: '已提交',
+  reviewing: '审核中',
+  approved: '已通过',
+  rejected: '已驳回'
+};
+
+export const DeliverableStatusColorMap: Record<DeliverableStatus, string> = {
+  pending: 'default',
+  submitted: 'processing',
+  reviewing: 'blue',
+  approved: 'success',
+  rejected: 'error'
+};
+
+export interface DeliverableAttachment {
+  id: number;
+  deliverable_id: number;
+  filename: string;
+  original_name: string;
+  file_path: string;
+  file_size: number;
+  file_type: string;
+  uploaded_by: string | null;
+  remark: string | null;
+  created_at: string;
+}
+
+export type AcceptanceStatus = 'pending' | 'submitted' | 'passed' | 'failed' | 'reviewing';
+
+export interface AcceptanceNode {
+  id: number;
+  phase_instance_id: number;
+  name: string;
+  description: string | null;
+  sort_order: number;
+  status: AcceptanceStatus;
+  acceptance_date: string | null;
+  accepted_by: string | null;
+  comment: string | null;
+  created_at: string;
+  updated_at: string;
+  record_count?: number;
+}
+
+export const AcceptanceStatusMap: Record<AcceptanceStatus, string> = {
+  pending: '待验收',
+  submitted: '已提交',
+  reviewing: '验收中',
+  passed: '已通过',
+  failed: '未通过'
+};
+
+export const AcceptanceStatusColorMap: Record<AcceptanceStatus, string> = {
+  pending: 'default',
+  submitted: 'processing',
+  reviewing: 'blue',
+  passed: 'success',
+  failed: 'error'
+};
+
+export interface AcceptanceRecord {
+  id: number;
+  acceptance_node_id: number;
+  action: string;
+  comment: string | null;
+  operator: string | null;
+  created_at: string;
+}
+
+export interface ProgressLog {
+  id: number;
+  declaration_id: number;
+  phase_instance_id: number | null;
+  progress_before: number;
+  progress_after: number;
+  status_before: string | null;
+  status_after: string | null;
+  update_note: string | null;
+  updated_by: string | null;
+  created_at: string;
+}
+
+export interface ProjectOverviewStats {
+  total: number;
+  completed: number;
+  in_progress: number;
+  pending: number;
+  delayed: number;
+}
+
+export interface DeliverableStats {
+  total: number;
+  submitted: number;
+  completion_rate: number;
+}
+
+export interface AcceptanceStats {
+  total: number;
+  passed: number;
+  pass_rate: number;
+}
+
+export interface ProjectExecutionOverview {
+  declaration: {
+    id: number;
+    title: string;
+    status: string;
+  };
+  overall_progress: number;
+  phase_stats: ProjectOverviewStats;
+  deliverable_stats: DeliverableStats;
+  acceptance_stats: AcceptanceStats;
+  latest_progress_log: ProgressLog | null;
+  phases: ProjectPhaseInstance[];
+}
+
+export interface DeclarationStats {
+  total: number;
+  draft: number;
+  in_progress: number;
+  approved: number;
+  rejected: number;
+  deleted: number;
+  total_versions: number;
+}
+
 export type RiskLevel = 'high' | 'medium' | 'low' | 'info';
 
 export interface RiskItem {
@@ -599,187 +786,3 @@ export interface EnterpriseProfile {
     created_at: string;
   }>;
 }
-
-export type PhaseStatus = 'pending' | 'in_progress' | 'completed' | 'delayed';
-
-export interface ProjectPhase {
-  id: number;
-  guideline_id: number | null;
-  name: string;
-  code: string;
-  description: string;
-  sort_order: number;
-  expected_duration: number;
-  requires_acceptance: number;
-  created_at: string;
-}
-
-export interface ProjectPhaseInstance {
-  id: number;
-  declaration_id: number;
-  phase_id: number | null;
-  phase_name: string;
-  phase_code: string | null;
-  phase_description: string | null;
-  sort_order: number;
-  status: PhaseStatus;
-  progress: number;
-  start_date: string | null;
-  planned_end_date: string | null;
-  actual_end_date: string | null;
-  expected_duration: number;
-  responsible_person: string | null;
-  remarks: string | null;
-  created_at: string;
-  updated_at: string;
-  deliverable_count?: number;
-  submitted_deliverable_count?: number;
-  acceptance_count?: number;
-  passed_acceptance_count?: number;
-}
-
-export interface ProjectProgressLog {
-  id: number;
-  declaration_id: number;
-  phase_instance_id: number | null;
-  progress_value: number;
-  previous_progress: number;
-  update_note: string | null;
-  updated_by: string | null;
-  created_at: string;
-}
-
-export interface PhaseDeliverable {
-  id: number;
-  phase_instance_id: number;
-  declaration_id: number;
-  name: string;
-  description: string | null;
-  file_type: string | null;
-  required: number;
-  sort_order: number;
-  created_at: string;
-  attachment_count?: number;
-  last_uploaded_at?: string | null;
-  attachments?: DeliverableAttachment[];
-}
-
-export interface DeliverableAttachment {
-  id: number;
-  deliverable_id: number;
-  phase_instance_id: number;
-  declaration_id: number;
-  filename: string;
-  original_name: string;
-  file_path: string;
-  file_size: number | null;
-  file_type: string | null;
-  uploaded_by: string | null;
-  uploaded_at: string;
-  version: number;
-  remark: string | null;
-}
-
-export type AcceptanceNodeStatus = 'pending' | 'passed' | 'failed' | 'conditional';
-export type AcceptanceNodeType = 'phase' | 'final' | 'custom';
-
-export interface AcceptanceNode {
-  id: number;
-  declaration_id: number;
-  phase_instance_id: number | null;
-  node_name: string;
-  node_type: AcceptanceNodeType;
-  description: string | null;
-  planned_date: string | null;
-  actual_date: string | null;
-  status: AcceptanceNodeStatus;
-  acceptance_criteria: string | null;
-  created_at: string;
-  updated_at: string;
-  phase_name?: string | null;
-  record_count?: number;
-  last_result?: string | null;
-  last_accepted_at?: string | null;
-  records?: AcceptanceRecord[];
-}
-
-export type AcceptanceResult = 'passed' | 'failed' | 'conditional';
-
-export interface AcceptanceRecord {
-  id: number;
-  node_id: number;
-  declaration_id: number;
-  phase_instance_id: number | null;
-  result: AcceptanceResult;
-  score: number | null;
-  comment: string | null;
-  issues_found: string | null;
-  suggestions: string | null;
-  accepted_by: string;
-  accepted_at: string;
-  attachments: string | null;
-}
-
-export interface ProjectExecutionSummary {
-  declaration: Declaration;
-  overall_progress: number;
-  phase_stats: {
-    total_phases: number;
-    pending_phases: number;
-    in_progress_phases: number;
-    completed_phases: number;
-    delayed_phases: number;
-  };
-  deliverable_stats: {
-    total_deliverables: number;
-    submitted_deliverables: number;
-    missing_required: number;
-  };
-  acceptance_stats: {
-    total_nodes: number;
-    pending_nodes: number;
-    passed_nodes: number;
-    failed_nodes: number;
-    conditional_nodes: number;
-  };
-}
-
-export interface ProjectPhasesResponse {
-  phases: ProjectPhaseInstance[];
-  overall_progress: number;
-  latest_progress_log: ProjectProgressLog | null;
-}
-
-export const PhaseStatusMap: Record<PhaseStatus, string> = {
-  pending: '待启动',
-  in_progress: '进行中',
-  completed: '已完成',
-  delayed: '已延期'
-};
-
-export const PhaseStatusColorMap: Record<PhaseStatus, string> = {
-  pending: 'default',
-  in_progress: 'blue',
-  completed: 'green',
-  delayed: 'orange'
-};
-
-export const AcceptanceStatusMap: Record<AcceptanceNodeStatus, string> = {
-  pending: '待验收',
-  passed: '已通过',
-  failed: '未通过',
-  conditional: '有条件通过'
-};
-
-export const AcceptanceStatusColorMap: Record<AcceptanceNodeStatus, string> = {
-  pending: 'default',
-  passed: 'green',
-  failed: 'red',
-  conditional: 'orange'
-};
-
-export const AcceptanceResultMap: Record<AcceptanceResult, string> = {
-  passed: '通过',
-  failed: '不通过',
-  conditional: '有条件通过'
-};

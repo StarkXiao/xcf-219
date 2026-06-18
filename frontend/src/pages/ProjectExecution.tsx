@@ -1,76 +1,95 @@
 import { useState, useEffect } from 'react';
 import {
   Card,
+  Tabs,
   Progress,
-  Row,
-  Col,
-  Statistic,
-  Steps,
+  List,
+  Tag,
   Button,
+  Space,
+  Table,
   Modal,
   Form,
   Input,
-  InputNumber,
   Select,
   DatePicker,
-  Upload,
-  Table,
-  Tag,
-  Space,
-  Tooltip,
-  Divider,
+  InputNumber,
   message,
-  Popconfirm,
+  Empty,
+  Spin,
   Descriptions,
-  List,
   Timeline,
-  Badge,
-  Collapse,
-  Rate
+  Upload,
+  Tooltip,
+  Badge
 } from 'antd';
 import {
-  PlayCircleOutlined,
-  CheckCircleOutlined,
-  UploadOutlined,
-  DownloadOutlined,
-  DeleteOutlined,
-  PlusOutlined,
-  EditOutlined,
+  DashboardOutlined,
+  SettingOutlined,
   FileTextOutlined,
-  ClockCircleOutlined,
-  TeamOutlined,
-  ExclamationCircleOutlined,
-  SaveOutlined,
+  AuditOutlined,
+  HistoryOutlined,
+  EditOutlined,
   EyeOutlined,
-  MessageOutlined
+  PlusOutlined,
+  DeleteOutlined,
+  DownloadOutlined,
+  UploadOutlined,
+  CheckCircleOutlined,
+  ClockCircleOutlined,
+  CloseCircleOutlined,
+  ExclamationCircleOutlined,
+  UserOutlined,
+  CalendarOutlined
 } from '@ant-design/icons';
-import type { UploadProps } from 'antd';
-import type { Dayjs } from 'dayjs';
 import dayjs from 'dayjs';
-import projectExecutionApi from '../api/project-execution';
-import type {
-  ProjectPhaseInstance,
-  PhaseDeliverable,
-  AcceptanceNode,
-  AcceptanceRecord,
-  ProjectProgressLog,
-  ProjectExecutionSummary,
-  PhaseStatus,
-  AcceptanceNodeStatus,
-  AcceptanceResult
-} from '../types';
+import type { UploadFile, UploadProps } from 'antd/es/upload/interface';
+
+import {
+  getProjectOverview,
+  getProjectPhases,
+  updatePhase,
+  getPhaseDeliverables,
+  addPhaseDeliverable,
+  updateDeliverable,
+  deleteDeliverable,
+  uploadDeliverableAttachments,
+  getDeliverableAttachments,
+  getAttachmentDownloadUrl,
+  deleteAttachment,
+  getAcceptanceNodes,
+  addAcceptanceNode,
+  updateAcceptanceNode,
+  deleteAcceptanceNode,
+  getAcceptanceRecords,
+  getProgressLogs
+} from '../api/project-execution';
+
 import {
   PhaseStatusMap,
   PhaseStatusColorMap,
+  DeliverableStatusMap,
+  DeliverableStatusColorMap,
   AcceptanceStatusMap,
-  AcceptanceStatusColorMap,
-  AcceptanceResultMap,
-  StatusMap
+  AcceptanceStatusColorMap
 } from '../types';
 
-const { Step } = Steps;
+import type {
+  ProjectPhaseInstance,
+  PhaseDeliverable,
+  DeliverableAttachment,
+  AcceptanceNode,
+  AcceptanceRecord,
+  ProgressLog,
+  ProjectExecutionOverview,
+  PhaseStatus,
+  DeliverableStatus,
+  AcceptanceStatus
+} from '../types';
+
 const { TextArea } = Input;
-const { Panel } = Collapse;
+const { Option } = Select;
+const { RangePicker } = DatePicker;
 
 interface ProjectExecutionProps {
   declarationId: number;
@@ -78,139 +97,95 @@ interface ProjectExecutionProps {
   declarationStatus?: string;
 }
 
-type TabKey = 'overview' | 'phases' | 'deliverables' | 'acceptance' | 'progress';
-
-export default function ProjectExecution({
-  declarationId,
-  declarationTitle,
-  declarationStatus
-}: ProjectExecutionProps) {
-  const [loading, setLoading] = useState(false);
-  const [summary, setSummary] = useState<ProjectExecutionSummary | null>(null);
+function ProjectExecution({ declarationId }: ProjectExecutionProps) {
+  const [activeTab, setActiveTab] = useState<string>('overview');
+  const [loading, setLoading] = useState<boolean>(false);
+  const [overview, setOverview] = useState<ProjectExecutionOverview | null>(null);
   const [phases, setPhases] = useState<ProjectPhaseInstance[]>([]);
-  const [overallProgress, setOverallProgress] = useState(0);
-  const [progressLogs, setProgressLogs] = useState<ProjectProgressLog[]>([]);
-  const [acceptanceNodes, setAcceptanceNodes] = useState<AcceptanceNode[]>([]);
-  const [activeTab, setActiveTab] = useState<TabKey>('overview');
-  const [expandedPhaseId, setExpandedPhaseId] = useState<number | null>(null);
-  const [phaseDeliverables, setPhaseDeliverables] = useState<Record<number, PhaseDeliverable[]>>({});
-  const [deliverablesLoading, setDeliverablesLoading] = useState<Record<number, boolean>>({});
+  const [progressLogs, setProgressLogs] = useState<ProgressLog[]>([]);
 
-  const [phaseModalVisible, setPhaseModalVisible] = useState(false);
-  const [editingPhase, setEditingPhase] = useState<ProjectPhaseInstance | null>(null);
+  const [phaseModalVisible, setPhaseModalVisible] = useState<boolean>(false);
+  const [selectedPhase, setSelectedPhase] = useState<ProjectPhaseInstance | null>(null);
   const [phaseForm] = Form.useForm();
 
-  const [deliverableModalVisible, setDeliverableModalVisible] = useState(false);
-  const [currentPhaseForDeliverable, setCurrentPhaseForDeliverable] = useState<number | null>(null);
+  const [deliverableModalVisible, setDeliverableModalVisible] = useState<boolean>(false);
+  const [selectedDeliverable, setSelectedDeliverable] = useState<PhaseDeliverable | null>(null);
   const [deliverableForm] = Form.useForm();
+  const [currentPhaseId, setCurrentPhaseId] = useState<number | null>(null);
+  const [phaseDeliverables, setPhaseDeliverables] = useState<PhaseDeliverable[]>([]);
+  const [deliverableLoading, setDeliverableLoading] = useState<boolean>(false);
 
-  const [acceptanceModalVisible, setAcceptanceModalVisible] = useState(false);
-  const [editingAcceptanceNode, setEditingAcceptanceNode] = useState<AcceptanceNode | null>(null);
+  const [attachmentModalVisible, setAttachmentModalVisible] = useState<boolean>(false);
+  const [currentDeliverableId, setCurrentDeliverableId] = useState<number | null>(null);
+  const [attachments, setAttachments] = useState<DeliverableAttachment[]>([]);
+  const [attachmentLoading, setAttachmentLoading] = useState<boolean>(false);
+  const [fileList, setFileList] = useState<UploadFile[]>([]);
+
+  const [acceptanceModalVisible, setAcceptanceModalVisible] = useState<boolean>(false);
+  const [selectedAcceptanceNode, setSelectedAcceptanceNode] = useState<AcceptanceNode | null>(null);
   const [acceptanceForm] = Form.useForm();
+  const [phaseAcceptanceNodes, setPhaseAcceptanceNodes] = useState<AcceptanceNode[]>([]);
+  const [acceptanceLoading, setAcceptanceLoading] = useState<boolean>(false);
 
-  const [acceptanceRecordModalVisible, setAcceptanceRecordModalVisible] = useState(false);
-  const [currentAcceptanceNode, setCurrentAcceptanceNode] = useState<AcceptanceNode | null>(null);
-  const [acceptanceRecordForm] = Form.useForm();
+  const [acceptanceRecordModalVisible, setAcceptanceRecordModalVisible] = useState<boolean>(false);
+  const [acceptanceRecords, setAcceptanceRecords] = useState<AcceptanceRecord[]>([]);
+  const [recordLoading, setRecordLoading] = useState<boolean>(false);
 
-  const canManage = declarationStatus === 'approved' || declarationStatus === 'completed';
-
-  const loadAllData = async () => {
+  const loadOverview = async () => {
     setLoading(true);
     try {
-      await Promise.all([
-        loadSummary(),
-        loadPhases(),
-        loadProgressLogs(),
-        loadAcceptanceNodes()
-      ]);
+      const res = await getProjectOverview(declarationId);
+      if (res.success && res.data) {
+        setOverview(res.data);
+        setPhases(res.data.phases || []);
+      } else {
+        message.error(res.message || '加载项目概览失败');
+      }
+    } catch (error: any) {
+      console.error('加载项目概览失败:', error);
+      message.error(error.response?.data?.message || '加载失败');
     } finally {
       setLoading(false);
     }
   };
 
-  const loadSummary = async () => {
-    const res = await projectExecutionApi.getSummary(declarationId);
-    if (res.success) {
-      setSummary(res.data);
-    }
-  };
-
   const loadPhases = async () => {
-    const res = await projectExecutionApi.getPhases(declarationId);
-    if (res.success) {
-      setPhases(res.data.phases);
-      setOverallProgress(res.data.overall_progress);
+    try {
+      const res = await getProjectPhases(declarationId);
+      if (res.success && res.data) {
+        setPhases(res.data);
+      }
+    } catch (error) {
+      console.error('加载阶段列表失败:', error);
     }
   };
 
   const loadProgressLogs = async () => {
-    const res = await projectExecutionApi.getProgressLogs(declarationId);
-    if (res.success) {
-      setProgressLogs(res.data);
-    }
-  };
-
-  const loadAcceptanceNodes = async () => {
-    const res = await projectExecutionApi.getAcceptanceNodes(declarationId);
-    if (res.success) {
-      setAcceptanceNodes(res.data);
-    }
-  };
-
-  const loadPhaseDeliverables = async (phaseId: number) => {
-    if (phaseDeliverables[phaseId]) return;
-    setDeliverablesLoading(prev => ({ ...prev, [phaseId]: true }));
     try {
-      const res = await projectExecutionApi.getDeliverables(phaseId);
-      if (res.success) {
-        setPhaseDeliverables(prev => ({ ...prev, [phaseId]: res.data }));
+      const res = await getProgressLogs(declarationId);
+      if (res.success && res.data) {
+        setProgressLogs(res.data);
       }
-    } finally {
-      setDeliverablesLoading(prev => ({ ...prev, [phaseId]: false }));
+    } catch (error) {
+      console.error('加载进度日志失败:', error);
     }
   };
 
   useEffect(() => {
     if (declarationId) {
-      loadAllData();
+      loadOverview();
+      loadProgressLogs();
     }
   }, [declarationId]);
 
-  useEffect(() => {
-    if (expandedPhaseId) {
-      loadPhaseDeliverables(expandedPhaseId);
-    }
-  }, [expandedPhaseId]);
-
-  const handleUpdatePhase = async (values: any) => {
-    if (!editingPhase) return;
-    try {
-      const data: any = { ...values };
-      if (values.start_date) data.start_date = values.start_date.format('YYYY-MM-DD');
-      if (values.planned_end_date) data.planned_end_date = values.planned_end_date.format('YYYY-MM-DD');
-      if (values.actual_end_date) data.actual_end_date = values.actual_end_date.format('YYYY-MM-DD');
-
-      const res = await projectExecutionApi.updatePhase(editingPhase.id, data);
-      if (res.success) {
-        message.success('阶段更新成功');
-        setPhaseModalVisible(false);
-        phaseForm.resetFields();
-        setEditingPhase(null);
-        await Promise.all([loadPhases(), loadSummary()]);
-      }
-    } catch (e: any) {
-      message.error(e.message || '更新失败');
-    }
-  };
-
-  const openEditPhase = (phase: ProjectPhaseInstance) => {
-    setEditingPhase(phase);
+  const handleEditPhase = (phase: ProjectPhaseInstance) => {
+    setSelectedPhase(phase);
     phaseForm.setFieldsValue({
       status: phase.status,
       progress: phase.progress,
-      start_date: phase.start_date ? dayjs(phase.start_date) : undefined,
-      planned_end_date: phase.planned_end_date ? dayjs(phase.planned_end_date) : undefined,
-      actual_end_date: phase.actual_end_date ? dayjs(phase.actual_end_date) : undefined,
+      start_date: phase.start_date ? dayjs(phase.start_date) : null,
+      planned_end_date: phase.planned_end_date ? dayjs(phase.planned_end_date) : null,
+      actual_end_date: phase.actual_end_date ? dayjs(phase.actual_end_date) : null,
       responsible_person: phase.responsible_person || '',
       remarks: phase.remarks || '',
       update_note: ''
@@ -218,204 +193,444 @@ export default function ProjectExecution({
     setPhaseModalVisible(true);
   };
 
-  const handleAddDeliverable = async (values: any) => {
-    if (!currentPhaseForDeliverable) return;
+  const handlePhaseSubmit = async () => {
     try {
-      const res = await projectExecutionApi.addDeliverable(currentPhaseForDeliverable, values);
+      const values = await phaseForm.validateFields();
+      if (!selectedPhase) return;
+
+      const data = {
+        status: values.status,
+        progress: values.progress,
+        start_date: values.start_date ? values.start_date.format('YYYY-MM-DD') : null,
+        planned_end_date: values.planned_end_date ? values.planned_end_date.format('YYYY-MM-DD') : null,
+        actual_end_date: values.actual_end_date ? values.actual_end_date.format('YYYY-MM-DD') : null,
+        responsible_person: values.responsible_person || null,
+        remarks: values.remarks || null,
+        update_note: values.update_note || null
+      };
+
+      const res = await updatePhase(selectedPhase.id, data);
       if (res.success) {
-        message.success('成果物添加成功');
-        setDeliverableModalVisible(false);
-        deliverableForm.resetFields();
-        setCurrentPhaseForDeliverable(null);
-        if (expandedPhaseId === currentPhaseForDeliverable) {
-          await loadPhaseDeliverables(currentPhaseForDeliverable);
-          setPhaseDeliverables(prev => ({ ...prev, [currentPhaseForDeliverable]: [] }));
-          delete phaseDeliverables[currentPhaseForDeliverable];
-          await loadPhaseDeliverables(currentPhaseForDeliverable);
-        }
-        await loadSummary();
+        message.success('阶段更新成功');
+        setPhaseModalVisible(false);
+        phaseForm.resetFields();
+        setSelectedPhase(null);
+        loadOverview();
+      } else {
+        message.error(res.message || '更新失败');
       }
-    } catch (e: any) {
-      message.error(e.message || '添加失败');
+    } catch (error: any) {
+      console.error('更新阶段失败:', error);
+      message.error(error.response?.data?.message || '更新失败');
     }
   };
 
-  const handleDeleteDeliverable = async (deliverableId: number, phaseId: number) => {
+  const loadPhaseDeliverables = async (phaseId: number) => {
+    setDeliverableLoading(true);
     try {
-      const res = await projectExecutionApi.deleteDeliverable(deliverableId);
-      if (res.success) {
-        message.success('删除成功');
-        setPhaseDeliverables(prev => ({ ...prev, [phaseId]: [] }));
-        delete phaseDeliverables[phaseId];
-        await loadPhaseDeliverables(phaseId);
-        await loadSummary();
+      const res = await getPhaseDeliverables(phaseId);
+      if (res.success && res.data) {
+        setPhaseDeliverables(res.data);
+      } else {
+        setPhaseDeliverables([]);
       }
-    } catch (e: any) {
-      message.error(e.message || '删除失败');
+    } catch (error) {
+      console.error('加载阶段成果失败:', error);
+      setPhaseDeliverables([]);
+    } finally {
+      setDeliverableLoading(false);
     }
   };
 
-  const handleDeleteAttachment = async (attachmentId: number, deliverableId: number, phaseId: number) => {
-    try {
-      const res = await projectExecutionApi.deleteAttachment(attachmentId);
-      if (res.success) {
-        message.success('附件删除成功');
-        setPhaseDeliverables(prev => ({ ...prev, [phaseId]: [] }));
-        delete phaseDeliverables[phaseId];
-        await loadPhaseDeliverables(phaseId);
-      }
-    } catch (e: any) {
-      message.error(e.message || '删除失败');
-    }
+  const handleViewDeliverables = (phase: ProjectPhaseInstance) => {
+    setCurrentPhaseId(phase.id);
+    setActiveTab('deliverables');
+    loadPhaseDeliverables(phase.id);
   };
 
-  const uploadProps = (deliverableId: number, phaseId: number): UploadProps => ({
-    multiple: true,
-    customRequest: async (options: any) => {
-      try {
-        const res = await projectExecutionApi.uploadDeliverableAttachments(
-          deliverableId,
-          [options.file],
-          ''
-        );
+  const handleAddDeliverable = () => {
+    setSelectedDeliverable(null);
+    deliverableForm.resetFields();
+    deliverableForm.setFieldsValue({
+      required: true,
+      sort_order: 0
+    });
+    setDeliverableModalVisible(true);
+  };
+
+  const handleEditDeliverable = (deliverable: PhaseDeliverable) => {
+    setSelectedDeliverable(deliverable);
+    deliverableForm.setFieldsValue({
+      name: deliverable.name,
+      description: deliverable.description || '',
+      required: deliverable.required === 1,
+      sort_order: deliverable.sort_order,
+      status: deliverable.status,
+      remark: deliverable.remark || ''
+    });
+    setDeliverableModalVisible(true);
+  };
+
+  const handleDeliverableSubmit = async () => {
+    try {
+      const values = await deliverableForm.validateFields();
+
+      if (selectedDeliverable) {
+        const res = await updateDeliverable(selectedDeliverable.id, {
+          name: values.name,
+          description: values.description || null,
+          required: values.required,
+          sort_order: values.sort_order,
+          status: values.status,
+          remark: values.remark || null
+        });
         if (res.success) {
-          message.success(`上传成功: ${options.file.name}`);
-          options.onSuccess(res.data);
-          setPhaseDeliverables(prev => ({ ...prev, [phaseId]: [] }));
-          delete phaseDeliverables[phaseId];
-          await loadPhaseDeliverables(phaseId);
-          await loadSummary();
+          message.success('成果更新成功');
+          setDeliverableModalVisible(false);
+          if (currentPhaseId) {
+            loadPhaseDeliverables(currentPhaseId);
+          }
+          loadOverview();
         } else {
-          options.onError(new Error(res.message));
+          message.error(res.message || '更新失败');
         }
-      } catch (e: any) {
-        message.error(e.message || '上传失败');
-        options.onError(e);
+      } else {
+        if (!currentPhaseId) {
+          message.error('请先选择阶段');
+          return;
+        }
+        const res = await addPhaseDeliverable(currentPhaseId, {
+          name: values.name,
+          description: values.description || '',
+          required: values.required,
+          sort_order: values.sort_order
+        });
+        if (res.success) {
+          message.success('成果添加成功');
+          setDeliverableModalVisible(false);
+          loadPhaseDeliverables(currentPhaseId);
+          loadOverview();
+        } else {
+          message.error(res.message || '添加失败');
+        }
       }
-    }
-  });
-
-  const handleAddAcceptanceNode = async (values: any) => {
-    try {
-      const data: any = { ...values };
-      if (values.planned_date) data.planned_date = values.planned_date.format('YYYY-MM-DD');
-
-      const res = editingAcceptanceNode
-        ? await projectExecutionApi.updateAcceptanceNode(editingAcceptanceNode.id, data)
-        : await projectExecutionApi.addAcceptanceNode(declarationId, data);
-
-      if (res.success) {
-        message.success(editingAcceptanceNode ? '更新成功' : '添加成功');
-        setAcceptanceModalVisible(false);
-        acceptanceForm.resetFields();
-        setEditingAcceptanceNode(null);
-        await loadAcceptanceNodes();
-        await loadSummary();
-      }
-    } catch (e: any) {
-      message.error(e.message || '操作失败');
+    } catch (error: any) {
+      console.error('提交成果失败:', error);
+      message.error(error.response?.data?.message || '操作失败');
     }
   };
 
-  const openEditAcceptanceNode = (node: AcceptanceNode) => {
-    setEditingAcceptanceNode(node);
+  const handleDeleteDeliverable = (deliverable: PhaseDeliverable) => {
+    Modal.confirm({
+      title: '确认删除',
+      content: `确定要删除成果「${deliverable.name}」吗？相关附件也会被删除。`,
+      okText: '确定',
+      cancelText: '取消',
+      okButtonProps: { danger: true },
+      onOk: async () => {
+        try {
+          const res = await deleteDeliverable(deliverable.id);
+          if (res.success) {
+            message.success('删除成功');
+            if (currentPhaseId) {
+              loadPhaseDeliverables(currentPhaseId);
+            }
+            loadOverview();
+          } else {
+            message.error(res.message || '删除失败');
+          }
+        } catch (error: any) {
+          console.error('删除成果失败:', error);
+          message.error(error.response?.data?.message || '删除失败');
+        }
+      }
+    });
+  };
+
+  const handleViewAttachments = async (deliverable: PhaseDeliverable) => {
+    setCurrentDeliverableId(deliverable.id);
+    setAttachmentModalVisible(true);
+    setFileList([]);
+    await loadAttachments(deliverable.id);
+  };
+
+  const loadAttachments = async (deliverableId: number) => {
+    setAttachmentLoading(true);
+    try {
+      const res = await getDeliverableAttachments(deliverableId);
+      if (res.success && res.data) {
+        setAttachments(res.data);
+      } else {
+        setAttachments([]);
+      }
+    } catch (error) {
+      console.error('加载附件失败:', error);
+      setAttachments([]);
+    } finally {
+      setAttachmentLoading(false);
+    }
+  };
+
+  const handleUpload: UploadProps['customRequest'] = async (options) => {
+    const { file, onSuccess, onError } = options;
+    if (!currentDeliverableId) return;
+
+    try {
+      const fileList = [file as File];
+      const res = await uploadDeliverableAttachments(currentDeliverableId, fileList);
+      if (res.success && res.data) {
+        message.success('上传成功');
+        loadAttachments(currentDeliverableId);
+        loadOverview();
+        if (onSuccess) onSuccess(res.data);
+      } else {
+        message.error(res.message || '上传失败');
+        if (onError) onError(new Error(res.message || '上传失败'));
+      }
+    } catch (error: any) {
+      console.error('上传失败:', error);
+      message.error(error.response?.data?.message || '上传失败');
+      if (onError) onError(error);
+    }
+  };
+
+  const handleDeleteAttachment = (attachment: DeliverableAttachment) => {
+    Modal.confirm({
+      title: '确认删除',
+      content: `确定要删除附件「${attachment.original_name}」吗？`,
+      okText: '确定',
+      cancelText: '取消',
+      okButtonProps: { danger: true },
+      onOk: async () => {
+        try {
+          const res = await deleteAttachment(attachment.id);
+          if (res.success) {
+            message.success('删除成功');
+            if (currentDeliverableId) {
+              loadAttachments(currentDeliverableId);
+            }
+            loadOverview();
+          } else {
+            message.error(res.message || '删除失败');
+          }
+        } catch (error: any) {
+          console.error('删除附件失败:', error);
+          message.error(error.response?.data?.message || '删除失败');
+        }
+      }
+    });
+  };
+
+  const loadAcceptanceNodes = async (phaseId: number) => {
+    setAcceptanceLoading(true);
+    try {
+      const res = await getAcceptanceNodes(phaseId);
+      if (res.success && res.data) {
+        setPhaseAcceptanceNodes(res.data);
+      } else {
+        setPhaseAcceptanceNodes([]);
+      }
+    } catch (error) {
+      console.error('加载验收节点失败:', error);
+      setPhaseAcceptanceNodes([]);
+    } finally {
+      setAcceptanceLoading(false);
+    }
+  };
+
+  const handleViewAcceptance = (phase: ProjectPhaseInstance) => {
+    setCurrentPhaseId(phase.id);
+    setActiveTab('acceptance');
+    loadAcceptanceNodes(phase.id);
+  };
+
+  const handleAddAcceptanceNode = () => {
+    setSelectedAcceptanceNode(null);
+    acceptanceForm.resetFields();
     acceptanceForm.setFieldsValue({
-      phase_instance_id: node.phase_instance_id || undefined,
-      node_name: node.node_name,
-      node_type: node.node_type,
-      description: node.description || '',
-      planned_date: node.planned_date ? dayjs(node.planned_date) : undefined,
-      acceptance_criteria: node.acceptance_criteria || ''
+      sort_order: 0
     });
     setAcceptanceModalVisible(true);
   };
 
-  const handleSubmitAcceptanceRecord = async (values: any) => {
-    if (!currentAcceptanceNode) return;
+  const handleEditAcceptanceNode = (node: AcceptanceNode) => {
+    setSelectedAcceptanceNode(node);
+    acceptanceForm.setFieldsValue({
+      name: node.name,
+      description: node.description || '',
+      sort_order: node.sort_order,
+      status: node.status,
+      comment: node.comment || ''
+    });
+    setAcceptanceModalVisible(true);
+  };
+
+  const handleAcceptanceSubmit = async () => {
     try {
-      const res = await projectExecutionApi.submitAcceptanceRecord(currentAcceptanceNode.id, values);
-      if (res.success) {
-        message.success('验收记录提交成功');
-        setAcceptanceRecordModalVisible(false);
-        acceptanceRecordForm.resetFields();
-        setCurrentAcceptanceNode(null);
-        await Promise.all([loadAcceptanceNodes(), loadPhases(), loadSummary()]);
+      const values = await acceptanceForm.validateFields();
+
+      if (selectedAcceptanceNode) {
+        const res = await updateAcceptanceNode(selectedAcceptanceNode.id, {
+          name: values.name,
+          description: values.description || null,
+          sort_order: values.sort_order,
+          status: values.status,
+          comment: values.comment || null
+        });
+        if (res.success) {
+          message.success('验收节点更新成功');
+          setAcceptanceModalVisible(false);
+          if (currentPhaseId) {
+            loadAcceptanceNodes(currentPhaseId);
+          }
+          loadOverview();
+        } else {
+          message.error(res.message || '更新失败');
+        }
+      } else {
+        if (!currentPhaseId) {
+          message.error('请先选择阶段');
+          return;
+        }
+        const res = await addAcceptanceNode(currentPhaseId, {
+          name: values.name,
+          description: values.description || '',
+          sort_order: values.sort_order
+        });
+        if (res.success) {
+          message.success('验收节点添加成功');
+          setAcceptanceModalVisible(false);
+          loadAcceptanceNodes(currentPhaseId);
+          loadOverview();
+        } else {
+          message.error(res.message || '添加失败');
+        }
       }
-    } catch (e: any) {
-      message.error(e.message || '提交失败');
+    } catch (error: any) {
+      console.error('提交验收节点失败:', error);
+      message.error(error.response?.data?.message || '操作失败');
     }
   };
 
-  const formatFileSize = (bytes: number | null) => {
-    if (!bytes) return '-';
-    if (bytes < 1024) return `${bytes} B`;
-    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  const handleDeleteAcceptanceNode = (node: AcceptanceNode) => {
+    Modal.confirm({
+      title: '确认删除',
+      content: `确定要删除验收节点「${node.name}」吗？`,
+      okText: '确定',
+      cancelText: '取消',
+      okButtonProps: { danger: true },
+      onOk: async () => {
+        try {
+          const res = await deleteAcceptanceNode(node.id);
+          if (res.success) {
+            message.success('删除成功');
+            if (currentPhaseId) {
+              loadAcceptanceNodes(currentPhaseId);
+            }
+            loadOverview();
+          } else {
+            message.error(res.message || '删除失败');
+          }
+        } catch (error: any) {
+          console.error('删除验收节点失败:', error);
+          message.error(error.response?.data?.message || '删除失败');
+        }
+      }
+    });
   };
 
-  const currentStepIndex = phases.findIndex(p => p.status === 'in_progress');
-  const firstPendingIndex = phases.findIndex(p => p.status === 'pending');
-  const stepsCurrent = currentStepIndex >= 0 ? currentStepIndex : (firstPendingIndex >= 0 ? firstPendingIndex : phases.length);
+  const handleViewAcceptanceRecords = async (node: AcceptanceNode) => {
+    setRecordLoading(true);
+    try {
+      const res = await getAcceptanceRecords(node.id);
+      if (res.success && res.data) {
+        setAcceptanceRecords(res.data);
+      } else {
+        setAcceptanceRecords([]);
+      }
+      setAcceptanceRecordModalVisible(true);
+    } catch (error) {
+      console.error('加载验收记录失败:', error);
+      setAcceptanceRecords([]);
+    } finally {
+      setRecordLoading(false);
+    }
+  };
 
-  const deliverablesColumns = [
+  const formatFileSize = (bytes: number): string => {
+    if (!bytes || bytes <= 0) return '0 B';
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(2) + ' KB';
+    return (bytes / (1024 * 1024)).toFixed(2) + ' MB';
+  };
+
+  const getPhaseStatusIcon = (status: PhaseStatus) => {
+    switch (status) {
+      case 'completed':
+        return <CheckCircleOutlined style={{ color: '#52c41a' }} />;
+      case 'in_progress':
+        return <ClockCircleOutlined style={{ color: '#1890ff' }} />;
+      case 'delayed':
+        return <ExclamationCircleOutlined style={{ color: '#faad14' }} />;
+      default:
+        return <ClockCircleOutlined style={{ color: '#bfbfbf' }} />;
+    }
+  };
+
+  const deliverableColumns = [
     {
-      title: '成果物名称',
+      title: '成果名称',
       dataIndex: 'name',
       key: 'name',
       render: (text: string, record: PhaseDeliverable) => (
         <Space>
           <FileTextOutlined />
           <span>{text}</span>
-          {record.required ? <Tag color="red" style={{ marginLeft: 8 }}>必需</Tag> : <Tag>可选</Tag>}
+          {record.required === 1 && <Tag color="red">必交</Tag>}
+          {record.required === 0 && <Tag color="default">选交</Tag>}
         </Space>
       )
     },
     {
-      title: '说明',
-      dataIndex: 'description',
-      key: 'description',
-      ellipsis: true
-    },
-    {
-      title: '上传状态',
+      title: '状态',
+      dataIndex: 'status',
       key: 'status',
-      render: (_: any, record: PhaseDeliverable) => {
-        const count = record.attachment_count || 0;
-        if (count > 0) {
-          return <Tag color="green">已上传 ({count})</Tag>;
-        }
-        if (record.required) {
-          return <Tag color="orange">待上传</Tag>;
-        }
-        return <Tag>未上传</Tag>;
-      }
+      width: 100,
+      render: (status: DeliverableStatus) => (
+        <Tag color={DeliverableStatusColorMap[status] || 'default'}>
+          {DeliverableStatusMap[status] || status}
+        </Tag>
+      )
     },
     {
-      title: '最后上传',
-      dataIndex: 'last_uploaded_at',
-      key: 'last_uploaded_at',
-      render: (date: string | null) => date ? dayjs(date).format('YYYY-MM-DD HH:mm') : '-'
+      title: '附件数',
+      dataIndex: 'attachment_count',
+      key: 'attachment_count',
+      width: 80,
+      render: (count: number | undefined) => count || 0
+    },
+    {
+      title: '提交时间',
+      dataIndex: 'submitted_at',
+      key: 'submitted_at',
+      width: 160,
+      render: (text: string | null) => (text ? dayjs(text).format('YYYY-MM-DD HH:mm') : '-')
     },
     {
       title: '操作',
       key: 'action',
+      width: 200,
       render: (_: any, record: PhaseDeliverable) => (
-        <Space>
-          <Upload {...uploadProps(record.id, record.phase_instance_id)} showUploadList={false}>
-            <Button type="link" size="small" icon={<UploadOutlined />} disabled={!canManage}>
-              上传
-            </Button>
-          </Upload>
-          <Popconfirm
-            title="确认删除此成果物？"
-            onConfirm={() => handleDeleteDeliverable(record.id, record.phase_instance_id)}
-            okText="确认"
-            cancelText="取消"
-          >
-            <Button type="link" size="small" danger icon={<DeleteOutlined />} disabled={!canManage}>
-              删除
-            </Button>
-          </Popconfirm>
+        <Space size="small">
+          <Button type="link" size="small" icon={<EyeOutlined />} onClick={() => handleViewAttachments(record)}>
+            附件
+          </Button>
+          <Button type="link" size="small" icon={<EditOutlined />} onClick={() => handleEditDeliverable(record)}>
+            编辑
+          </Button>
+          <Button type="link" size="small" danger icon={<DeleteOutlined />} onClick={() => handleDeleteDeliverable(record)}>
+            删除
+          </Button>
         </Space>
       )
     }
@@ -423,1038 +638,769 @@ export default function ProjectExecution({
 
   const acceptanceColumns = [
     {
-      title: '验收节点',
-      dataIndex: 'node_name',
-      key: 'node_name',
-      render: (text: string, record: AcceptanceNode) => (
+      title: '节点名称',
+      dataIndex: 'name',
+      key: 'name',
+      render: (text: string) => (
         <Space>
-          <CheckCircleOutlined />
+          <AuditOutlined />
           <span>{text}</span>
-          {record.node_type === 'final' && <Tag color="purple">最终验收</Tag>}
-          {record.node_type === 'phase' && <Tag color="blue">阶段验收</Tag>}
-          {record.node_type === 'custom' && <Tag>自定义</Tag>}
         </Space>
       )
-    },
-    {
-      title: '关联阶段',
-      dataIndex: 'phase_name',
-      key: 'phase_name',
-      render: (text: string | null) => text || '-'
-    },
-    {
-      title: '计划日期',
-      dataIndex: 'planned_date',
-      key: 'planned_date',
-      render: (date: string | null) => date || '-'
-    },
-    {
-      title: '实际日期',
-      dataIndex: 'actual_date',
-      key: 'actual_date',
-      render: (date: string | null) => date || '-'
     },
     {
       title: '状态',
       dataIndex: 'status',
       key: 'status',
-      render: (status: AcceptanceNodeStatus) => (
-        <Tag color={AcceptanceStatusColorMap[status]}>
-          {AcceptanceStatusMap[status]}
+      width: 100,
+      render: (status: AcceptanceStatus) => (
+        <Tag color={AcceptanceStatusColorMap[status] || 'default'}>
+          {AcceptanceStatusMap[status] || status}
         </Tag>
       )
     },
     {
-      title: '上次结果',
-      dataIndex: 'last_result',
-      key: 'last_result',
-      render: (result: string | null) => result ? AcceptanceResultMap[result as AcceptanceResult] || result : '-'
+      title: '验收日期',
+      dataIndex: 'acceptance_date',
+      key: 'acceptance_date',
+      width: 120,
+      render: (text: string | null) => (text || '-')
+    },
+    {
+      title: '验收人',
+      dataIndex: 'accepted_by',
+      key: 'accepted_by',
+      width: 100,
+      render: (text: string | null) => text || '-'
     },
     {
       title: '操作',
       key: 'action',
+      width: 200,
       render: (_: any, record: AcceptanceNode) => (
-        <Space>
-          <Button
-            type="link"
-            size="small"
-            icon={<EditOutlined />}
-            onClick={() => openEditAcceptanceNode(record)}
-            disabled={!canManage}
-          >
+        <Space size="small">
+          <Button type="link" size="small" icon={<HistoryOutlined />} onClick={() => handleViewAcceptanceRecords(record)}>
+            记录
+          </Button>
+          <Button type="link" size="small" icon={<EditOutlined />} onClick={() => handleEditAcceptanceNode(record)}>
             编辑
           </Button>
-          <Button
-            type="link"
-            size="small"
-            icon={<CheckCircleOutlined />}
-            onClick={() => {
-              setCurrentAcceptanceNode(record);
-              acceptanceRecordForm.resetFields();
-              setAcceptanceRecordModalVisible(true);
-            }}
-            disabled={!canManage}
-          >
-            验收
+          <Button type="link" size="small" danger icon={<DeleteOutlined />} onClick={() => handleDeleteAcceptanceNode(record)}>
+            删除
           </Button>
         </Space>
       )
     }
   ];
 
-  return (
-    <div>
-      {declarationTitle && (
-        <Card style={{ marginBottom: 16 }} loading={loading && !summary}>
-          <Row gutter={24}>
-            <Col xs={24} md={6}>
-              <Statistic
-                title="项目名称"
-                value={declarationTitle}
-                valueStyle={{ fontSize: 16 }}
-              />
-            </Col>
-            <Col xs={24} md={6}>
-              <Statistic
-                title="申报状态"
-                value={StatusMap[declarationStatus || ''] || declarationStatus}
-                prefix={<Badge status={declarationStatus === 'approved' ? 'success' : 'processing'} />}
-              />
-            </Col>
-            <Col xs={24} md={6}>
-              <Statistic
-                title="总体执行进度"
-                value={overallProgress}
-                suffix="%"
-                prefix={<Progress type="circle" size={24} percent={overallProgress} />}
-              />
-            </Col>
-            <Col xs={24} md={6}>
-              <Space direction="vertical" style={{ width: '100%' }}>
-                <div style={{ fontWeight: 'bold', marginBottom: 4 }}>执行进度条</div>
-                <Progress percent={overallProgress} status={overallProgress === 100 ? 'success' : 'active'} />
-              </Space>
-            </Col>
-          </Row>
-
-          {summary && (
-            <>
-              <Divider orientation="left" orientationMargin={0}>统计概览</Divider>
-              <Row gutter={[16, 16]}>
-                <Col xs={12} sm={6}>
-                  <Card size="small">
-                    <Statistic
-                      title="项目阶段"
-                      value={`${summary.phase_stats.completed_phases}/${summary.phase_stats.total_phases}`}
-                      prefix={<ClockCircleOutlined style={{ color: '#1890ff' }} />}
-                    />
-                    <Progress
-                      percent={summary.phase_stats.total_phases ? Math.round((summary.phase_stats.completed_phases / summary.phase_stats.total_phases) * 100) : 0}
-                      size="small"
-                      style={{ marginTop: 8 }}
-                    />
-                  </Card>
-                </Col>
-                <Col xs={12} sm={6}>
-                  <Card size="small">
-                    <Statistic
-                      title="成果物提交"
-                      value={`${summary.deliverable_stats.submitted_deliverables}/${summary.deliverable_stats.total_deliverables}`}
-                      prefix={<FileTextOutlined style={{ color: '#52c41a' }} />}
-                      valueStyle={{ color: summary.deliverable_stats.missing_required > 0 ? '#fa8c16' : undefined }}
-                    />
-                    <Progress
-                      percent={summary.deliverable_stats.total_deliverables ? Math.round((summary.deliverable_stats.submitted_deliverables / summary.deliverable_stats.total_deliverables) * 100) : 0}
-                      size="small"
-                      style={{ marginTop: 8 }}
-                      status={summary.deliverable_stats.missing_required > 0 ? 'exception' : undefined}
-                    />
-                  </Card>
-                </Col>
-                <Col xs={12} sm={6}>
-                  <Card size="small">
-                    <Statistic
-                      title="验收节点"
-                      value={`${summary.acceptance_stats.passed_nodes}/${summary.acceptance_stats.total_nodes}`}
-                      prefix={<CheckCircleOutlined style={{ color: '#722ed1' }} />}
-                    />
-                    <Progress
-                      percent={summary.acceptance_stats.total_nodes ? Math.round((summary.acceptance_stats.passed_nodes / summary.acceptance_stats.total_nodes) * 100) : 0}
-                      size="small"
-                      style={{ marginTop: 8 }}
-                    />
-                  </Card>
-                </Col>
-                <Col xs={12} sm={6}>
-                  <Card size="small">
-                    <Statistic
-                      title="延期阶段"
-                      value={summary.phase_stats.delayed_phases}
-                      prefix={<ExclamationCircleOutlined style={{ color: '#fa8c16' }} />}
-                      valueStyle={{ color: summary.phase_stats.delayed_phases > 0 ? '#fa8c16' : undefined }}
-                    />
-                    {summary.phase_stats.in_progress_phases > 0 && (
-                      <Tag color="blue" style={{ marginTop: 8 }}>
-                        <TeamOutlined /> 进行中: {summary.phase_stats.in_progress_phases} 个阶段
-                      </Tag>
-                    )}
-                  </Card>
-                </Col>
-              </Row>
-            </>
-          )}
-
-          {!canManage && (
-            <div style={{ marginTop: 16, padding: 12, background: '#fffbe6', borderRadius: 4, border: '1px solid #ffe58f' }}>
-              <ExclamationCircleOutlined style={{ color: '#faad14', marginRight: 8 }} />
-              <span>项目尚未立项，当前仅可查看。项目在"已立项"状态后方可进行执行管理。</span>
-            </div>
-          )}
-        </Card>
-      )}
-
-      <Card
-        tabList={[
-          { key: 'overview', tab: '进度总览' },
-          { key: 'phases', tab: '阶段管理' },
-          { key: 'deliverables', tab: '阶段成果' },
-          { key: 'acceptance', tab: '验收节点' },
-          { key: 'progress', tab: '进度日志' }
-        ]}
-        activeTabKey={activeTab}
-        onTabChange={(key) => setActiveTab(key as TabKey)}
-        loading={loading}
-      >
-        {activeTab === 'overview' && (
+  const tabItems = [
+    {
+      key: 'overview',
+      label: (
+        <span>
+          <DashboardOutlined />
+          进度总览
+        </span>
+      ),
+      children: (
+        <Spin spinning={loading}>
           <div>
-            <h3 style={{ marginBottom: 24 }}>项目阶段进度</h3>
-            {phases.length > 0 ? (
-              <Steps
-                direction="vertical"
-                current={stepsCurrent}
-                status={overallProgress === 100 ? 'finish' : undefined}
-                style={{ maxWidth: 800 }}
-              >
-                {phases.map((phase, idx) => (
-                  <Step
-                    key={phase.id}
-                    title={
-                      <Space>
-                        <span style={{ fontWeight: 600 }}>{phase.phase_name}</span>
-                        <Tag color={PhaseStatusColorMap[phase.status] as any}>
-                          {PhaseStatusMap[phase.status]}
-                        </Tag>
-                        <span style={{ color: '#888', fontSize: 12 }}>
-                          进度: {phase.progress}%
-                        </span>
-                      </Space>
-                    }
-                    description={
-                      <div style={{ marginTop: 8 }}>
-                        <p style={{ margin: '0 0 8px 0', color: '#666' }}>
-                          {phase.phase_description}
-                        </p>
-                        <Row gutter={16} style={{ marginBottom: 8 }}>
-                          <Col span={8}>
-                            <small style={{ color: '#999' }}>负责人:</small>{' '}
-                            <span>{phase.responsible_person || '-'}</span>
-                          </Col>
-                          <Col span={8}>
-                            <small style={{ color: '#999' }}>开始:</small>{' '}
-                            <span>{phase.start_date || '-'}</span>
-                          </Col>
-                          <Col span={8}>
-                            <small style={{ color: '#999' }}>计划完成:</small>{' '}
-                            <span>{phase.planned_end_date || '-'}</span>
-                          </Col>
-                        </Row>
-                        <Progress percent={phase.progress} size="small" />
-                        <Space style={{ marginTop: 12 }}>
-                          <Button
-                            size="small"
-                            icon={<EditOutlined />}
-                            onClick={() => openEditPhase(phase)}
-                            disabled={!canManage}
-                          >
-                            编辑进度
-                          </Button>
-                          <Button
-                            size="small"
-                            type="primary"
-                            icon={<EyeOutlined />}
-                            onClick={() => {
-                              setExpandedPhaseId(phase.id);
-                              setActiveTab('phases');
-                            }}
-                          >
-                            查看详情
-                          </Button>
-                        </Space>
-                      </div>
-                    }
-                    icon={
-                      phase.status === 'completed' ? (
-                        <CheckCircleOutlined style={{ color: '#52c41a', fontSize: 24 }} />
-                      ) : phase.status === 'in_progress' ? (
-                        <PlayCircleOutlined style={{ color: '#1890ff', fontSize: 24 }} />
-                      ) : phase.status === 'delayed' ? (
-                        <ExclamationCircleOutlined style={{ color: '#fa8c16', fontSize: 24 }} />
-                      ) : undefined
-                    }
-                  />
-                ))}
-              </Steps>
-            ) : (
-              <EmptyState />
-            )}
+            <div
+              style={{
+                padding: 24,
+                background: 'linear-gradient(135deg, #f0f7ff 0%, #e6f4ff 100%)',
+                borderRadius: 12,
+                border: '1px solid #bae0ff',
+                marginBottom: 24
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+                <div>
+                  <div style={{ fontSize: 16, fontWeight: 600, color: '#0958d9', marginBottom: 4 }}>
+                    项目整体进度
+                  </div>
+                  <div style={{ fontSize: 13, color: '#666' }}>
+                    共 {overview?.phase_stats?.total || 0} 个阶段，已完成 {overview?.phase_stats?.completed || 0} 个
+                  </div>
+                </div>
+                <div style={{ textAlign: 'right' }}>
+                  <div style={{ fontSize: 36, fontWeight: 700, color: '#1890ff' }}>
+                    {overview?.overall_progress ?? 0}%
+                  </div>
+                </div>
+              </div>
+              <Progress percent={overview?.overall_progress ?? 0} status="active" strokeColor={{ from: '#1890ff', to: '#52c41a' }} />
+            </div>
 
-            {acceptanceNodes.length > 0 && (
-              <>
-                <Divider />
-                <h3 style={{ marginBottom: 24 }}>验收进度</h3>
-                <Row gutter={[16, 16]}>
-                  {acceptanceNodes.map(node => (
-                    <Col xs={24} sm={12} md={8} key={node.id}>
-                      <Card
-                        size="small"
-                        style={{
-                          borderLeft: `4px solid ${
-                            node.status === 'passed' ? '#52c41a' :
-                            node.status === 'failed' ? '#f5222d' :
-                            node.status === 'conditional' ? '#fa8c16' : '#d9d9d9'
-                          }`
-                        }}
-                      >
-                        <div style={{ fontWeight: 600, marginBottom: 8 }}>
-                          {node.node_name}
+            <div style={{ display: 'flex', gap: 16, marginBottom: 24, flexWrap: 'wrap' }}>
+              <Card size="small" style={{ flex: 1, minWidth: 200 }}>
+                <div style={{ fontSize: 13, color: '#666', marginBottom: 8 }}>阶段统计</div>
+                <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+                  <Space>
+                    <Badge color="success" text={`完成 ${overview?.phase_stats?.completed || 0}`} />
+                  </Space>
+                  <Space>
+                    <Badge color="processing" text={`进行中 ${overview?.phase_stats?.in_progress || 0}`} />
+                  </Space>
+                  <Space>
+                    <Badge color="default" text={`未开始 ${overview?.phase_stats?.pending || 0}`} />
+                  </Space>
+                  <Space>
+                    <Badge color="warning" text={`延期 ${overview?.phase_stats?.delayed || 0}`} />
+                  </Space>
+                </div>
+              </Card>
+              <Card size="small" style={{ flex: 1, minWidth: 200 }}>
+                <div style={{ fontSize: 13, color: '#666', marginBottom: 8 }}>成果提交</div>
+                <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
+                  <span style={{ fontSize: 24, fontWeight: 600, color: '#52c41a' }}>
+                    {overview?.deliverable_stats?.submitted || 0}
+                  </span>
+                  <span style={{ color: '#999' }}> / {overview?.deliverable_stats?.total || 0} 项</span>
+                  <Tag color="blue">完成率 {overview?.deliverable_stats?.completion_rate || 0}%</Tag>
+                </div>
+              </Card>
+              <Card size="small" style={{ flex: 1, minWidth: 200 }}>
+                <div style={{ fontSize: 13, color: '#666', marginBottom: 8 }}>验收通过</div>
+                <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
+                  <span style={{ fontSize: 24, fontWeight: 600, color: '#722ed1' }}>
+                    {overview?.acceptance_stats?.passed || 0}
+                  </span>
+                  <span style={{ color: '#999' }}> / {overview?.acceptance_stats?.total || 0} 项</span>
+                  <Tag color="purple">通过率 {overview?.acceptance_stats?.pass_rate || 0}%</Tag>
+                </div>
+              </Card>
+            </div>
+
+            <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <h3 style={{ margin: 0 }}>项目阶段进度</h3>
+            </div>
+
+            {phases.length > 0 ? (
+              <List
+                dataSource={phases}
+                renderItem={(phase) => (
+                  <List.Item
+                    style={{
+                      padding: '16px 0',
+                      borderBottom: '1px solid #f0f0f0'
+                    }}
+                  >
+                    <List.Item.Meta
+                      avatar={
+                        <div
+                          style={{
+                            width: 48,
+                            height: 48,
+                            borderRadius: '50%',
+                            background:
+                              phase.status === 'completed'
+                                ? '#f6ffed'
+                                : phase.status === 'in_progress'
+                                ? '#e6f4ff'
+                                : '#f5f5f5',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            fontSize: 20
+                          }}
+                        >
+                          {getPhaseStatusIcon(phase.status as PhaseStatus)}
                         </div>
-                        <div style={{ marginBottom: 8 }}>
-                          <Tag color={AcceptanceStatusColorMap[node.status] as any}>
-                            {AcceptanceStatusMap[node.status]}
+                      }
+                      title={
+                        <Space>
+                          <span style={{ fontWeight: 500 }}>{phase.phase_name}</span>
+                          <Tag color={PhaseStatusColorMap[phase.status as PhaseStatus] || 'default'}>
+                            {PhaseStatusMap[phase.status as PhaseStatus] || phase.status}
                           </Tag>
-                        </div>
-                        {node.last_result && (
-                          <div style={{ fontSize: 12, color: '#666' }}>
-                            上次: {AcceptanceResultMap[node.last_result as AcceptanceResult] || node.last_result}
-                            {node.last_accepted_at && ` · ${dayjs(node.last_accepted_at).format('MM-DD')}`}
+                        </Space>
+                      }
+                      description={
+                        <div>
+                          <div style={{ fontSize: 13, color: '#666', marginBottom: 8 }}>
+                            {phase.phase_description || '暂无描述'}
                           </div>
-                        )}
-                        {node.planned_date && (
+                          <Progress
+                            percent={phase.progress || 0}
+                            size="small"
+                            style={{ maxWidth: 300 }}
+                          />
                           <div style={{ fontSize: 12, color: '#999', marginTop: 4 }}>
-                            计划: {node.planned_date}
+                            <Space>
+                              {phase.responsible_person && (
+                                <span>
+                                  <UserOutlined style={{ marginRight: 4 }} />
+                                  {phase.responsible_person}
+                                </span>
+                              )}
+                              {phase.expected_duration > 0 && (
+                                <span>
+                                  <CalendarOutlined style={{ marginRight: 4 }} />
+                                  预计 {phase.expected_duration} 天
+                                </span>
+                              )}
+                              {phase.start_date && phase.planned_end_date && (
+                                <span>
+                                  {phase.start_date} ~ {phase.planned_end_date}
+                                </span>
+                              )}
+                            </Space>
                           </div>
-                        )}
-                      </Card>
-                    </Col>
-                  ))}
-                </Row>
-              </>
+                        </div>
+                      }
+                    />
+                    <Space>
+                      <Button type="link" size="small" icon={<EditOutlined />} onClick={() => handleEditPhase(phase)}>
+                        编辑进度
+                      </Button>
+                      <Button type="link" size="small" icon={<FileTextOutlined />} onClick={() => handleViewDeliverables(phase)}>
+                        成果 ({phase.deliverable_count || 0})
+                      </Button>
+                      <Button type="link" size="small" icon={<AuditOutlined />} onClick={() => handleViewAcceptance(phase)}>
+                        验收 ({phase.acceptance_count || 0})
+                      </Button>
+                    </Space>
+                  </List.Item>
+                )}
+              />
+            ) : (
+              <Empty description="暂无阶段数据" />
             )}
           </div>
-        )}
-
-        {activeTab === 'phases' && (
-          <div>
-            {phases.length > 0 ? (
-              <Collapse
-                activeKey={expandedPhaseId ? [String(expandedPhaseId)] : []}
-                onChange={(keys) => setExpandedPhaseId(keys.length > 0 ? Number(keys[0]) : null)}
-              >
-                {phases.map(phase => (
-                  <Panel
-                    key={phase.id}
-                    header={
-                      <Space>
-                        <span style={{ fontWeight: 600, fontSize: 15 }}>{phase.phase_name}</span>
-                        <Tag color={PhaseStatusColorMap[phase.status] as any}>
-                          {PhaseStatusMap[phase.status]}
-                        </Tag>
-                        <span style={{ color: '#888' }}>
-                          <ClockCircleOutlined /> {phase.expected_duration}天 · 进度 {phase.progress}%
-                        </span>
-                        {phase.deliverable_count !== undefined && phase.deliverable_count > 0 && (
-                          <span style={{ color: '#888' }}>
-                            <FileTextOutlined /> 成果物 {phase.submitted_deliverable_count || 0}/{phase.deliverable_count}
-                          </span>
-                        )}
-                        {phase.acceptance_count !== undefined && phase.acceptance_count > 0 && (
-                          <span style={{ color: '#888' }}>
-                            <CheckCircleOutlined /> 验收 {phase.passed_acceptance_count || 0}/{phase.acceptance_count}
-                          </span>
-                        )}
-                      </Space>
-                    }
-                    extra={
-                      <Button
-                        size="small"
-                        icon={<EditOutlined />}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          openEditPhase(phase);
-                        }}
-                        disabled={!canManage}
-                      >
+        </Spin>
+      )
+    },
+    {
+      key: 'phases',
+      label: (
+        <span>
+          <SettingOutlined />
+          阶段管理
+        </span>
+      ),
+      children: (
+        <Spin spinning={loading}>
+          <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <h3 style={{ margin: 0 }}>阶段列表</h3>
+          </div>
+          {phases.length > 0 ? (
+            <Table
+              dataSource={phases}
+              rowKey="id"
+              size="small"
+              pagination={false}
+              columns={[
+                {
+                  title: '阶段名称',
+                  dataIndex: 'phase_name',
+                  key: 'phase_name',
+                  render: (text: string, record: ProjectPhaseInstance) => (
+                    <Space>
+                      {getPhaseStatusIcon(record.status as PhaseStatus)}
+                      <span style={{ fontWeight: 500 }}>{text}</span>
+                    </Space>
+                  )
+                },
+                {
+                  title: '状态',
+                  dataIndex: 'status',
+                  key: 'status',
+                  width: 100,
+                  render: (status: PhaseStatus) => (
+                    <Tag color={PhaseStatusColorMap[status] || 'default'}>
+                      {PhaseStatusMap[status] || status}
+                    </Tag>
+                  )
+                },
+                {
+                  title: '进度',
+                  dataIndex: 'progress',
+                  key: 'progress',
+                  width: 200,
+                  render: (progress: number) => <Progress percent={progress || 0} size="small" />
+                },
+                {
+                  title: '负责人',
+                  dataIndex: 'responsible_person',
+                  key: 'responsible_person',
+                  width: 100,
+                  render: (text: string | null) => text || '-'
+                },
+                {
+                  title: '预计周期',
+                  dataIndex: 'expected_duration',
+                  key: 'expected_duration',
+                  width: 100,
+                  render: (days: number) => (days > 0 ? `${days} 天` : '-')
+                },
+                {
+                  title: '操作',
+                  key: 'action',
+                  width: 150,
+                  render: (_: any, record: ProjectPhaseInstance) => (
+                    <Space size="small">
+                      <Button type="link" size="small" icon={<EditOutlined />} onClick={() => handleEditPhase(record)}>
                         编辑
                       </Button>
-                    }
-                  >
-                    <Row gutter={[24, 16]}>
-                      <Col xs={24} md={12}>
-                        <Descriptions column={1} size="small" bordered title="阶段信息">
-                          <Descriptions.Item label="阶段说明">{phase.phase_description || '-'}</Descriptions.Item>
-                          <Descriptions.Item label="负责人">{phase.responsible_person || '-'}</Descriptions.Item>
-                          <Descriptions.Item label="计划工期">{phase.expected_duration} 天</Descriptions.Item>
-                          <Descriptions.Item label="开始日期">{phase.start_date || '-'}</Descriptions.Item>
-                          <Descriptions.Item label="计划完成">{phase.planned_end_date || '-'}</Descriptions.Item>
-                          <Descriptions.Item label="实际完成">{phase.actual_end_date || '-'}</Descriptions.Item>
-                          <Descriptions.Item label="备注">{phase.remarks || '-'}</Descriptions.Item>
-                        </Descriptions>
-                      </Col>
-                      <Col xs={24} md={12}>
-                        <Card size="small" title="阶段进度" style={{ marginBottom: 16 }}>
-                          <Progress
-                            percent={phase.progress}
-                            status={
-                              phase.status === 'completed' ? 'success' :
-                              phase.status === 'delayed' ? 'exception' : 'active'
-                            }
-                          />
-                          <div style={{ marginTop: 16 }}>
-                            <Space>
-                              <Button
-                                type="primary"
-                                size="small"
-                                icon={<PlayCircleOutlined />}
-                                onClick={() => {
-                                  projectExecutionApi.updatePhase(phase.id, {
-                                    status: phase.status === 'pending' ? 'in_progress' : phase.status,
-                                    start_date: phase.start_date || dayjs().format('YYYY-MM-DD')
-                                  }).then(() => {
-                                    message.success('阶段已启动');
-                                    loadPhases();
-                                    loadSummary();
-                                  });
-                                }}
-                                disabled={!canManage || phase.status !== 'pending'}
-                              >
-                                启动阶段
-                              </Button>
-                              <Button
-                                size="small"
-                                icon={<SaveOutlined />}
-                                onClick={() => openEditPhase(phase)}
-                                disabled={!canManage}
-                              >
-                                更新进度
-                              </Button>
-                              <Button
-                                type={phase.status !== 'completed' ? 'default' : 'primary'}
-                                ghost
-                                size="small"
-                                icon={<CheckCircleOutlined />}
-                                onClick={() => {
-                                  projectExecutionApi.updatePhase(phase.id, {
-                                    status: 'completed',
-                                    progress: 100,
-                                    actual_end_date: dayjs().format('YYYY-MM-DD')
-                                  }).then(() => {
-                                    message.success('阶段已标记完成');
-                                    loadPhases();
-                                    loadSummary();
-                                  });
-                                }}
-                                disabled={!canManage}
-                              >
-                                标记完成
-                              </Button>
-                            </Space>
-                          </div>
-                        </Card>
-
-                        <Card
-                          size="small"
-                          title={
-                            <Space>
-                              <span>阶段成果物</span>
-                              <Button
-                                type="text"
-                                size="small"
-                                icon={<PlusOutlined />}
-                                onClick={() => {
-                                  setCurrentPhaseForDeliverable(phase.id);
-                                  deliverableForm.resetFields();
-                                  setDeliverableModalVisible(true);
-                                }}
-                                disabled={!canManage}
-                              >
-                                添加成果物
-                              </Button>
-                            </Space>
-                          }
-                        >
-                          {loadPhaseDeliverables(phase.id) || null}
-                          <Table
-                            size="small"
-                            columns={deliverablesColumns}
-                            dataSource={phaseDeliverables[phase.id] || []}
-                            loading={deliverablesLoading[phase.id]}
-                            rowKey="id"
-                            pagination={false}
-                            expandable={{
-                              expandedRowRender: (record) => (
-                                <div>
-                                  {record.attachments && record.attachments.length > 0 ? (
-                                    <List
-                                      size="small"
-                                      dataSource={record.attachments}
-                                      renderItem={(att) => (
-                                        <List.Item
-                                          key={att.id}
-                                          actions={[
-                                            <a
-                                              key="download"
-                                              href={projectExecutionApi.downloadAttachment(att.id)}
-                                              target="_blank"
-                                              rel="noreferrer"
-                                            >
-                                              <DownloadOutlined /> 下载
-                                            </a>,
-                                            canManage ? (
-                                              <Popconfirm
-                                                key="delete"
-                                                title="删除此附件？"
-                                                onConfirm={() => handleDeleteAttachment(att.id, record.id, phase.id)}
-                                              >
-                                                <a style={{ color: '#ff4d4f' }}>
-                                                  <DeleteOutlined /> 删除
-                                                </a>
-                                              </Popconfirm>
-                                            ) : null
-                                          ]}
-                                        >
-                                          <List.Item.Meta
-                                            avatar={<FileTextOutlined style={{ fontSize: 20 }} />}
-                                            title={
-                                              <Space>
-                                                <span>{att.original_name}</span>
-                                                <Tag color="blue">v{att.version}</Tag>
-                                                {att.remark && <Tag>{att.remark}</Tag>}
-                                              </Space>
-                                            }
-                                            description={
-                                              <Space split="|">
-                                                <span>{formatFileSize(att.file_size)}</span>
-                                                <span>{att.uploaded_by || 'unknown'}</span>
-                                                <span>{dayjs(att.uploaded_at).format('YYYY-MM-DD HH:mm')}</span>
-                                              </Space>
-                                            }
-                                          />
-                                        </List.Item>
-                                      )}
-                                    />
-                                  ) : (
-                                    <div style={{ color: '#999', padding: 8 }}>暂无附件，点击上方"上传"按钮添加</div>
-                                  )}
-                                </div>
-                              ),
-                              rowExpandable: (record) => (record.attachment_count || 0) > 0
-                            }}
-                          />
-                        </Card>
-                      </Col>
-                    </Row>
-                  </Panel>
+                    </Space>
+                  )
+                }
+              ]}
+            />
+          ) : (
+            <Empty description="暂无阶段数据" />
+          )}
+        </Spin>
+      )
+    },
+    {
+      key: 'deliverables',
+      label: (
+        <span>
+          <FileTextOutlined />
+          阶段成果
+        </span>
+      ),
+      children: (
+        <div>
+          <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <Space>
+              <span>选择阶段：</span>
+              <Select
+                style={{ width: 250 }}
+                placeholder="请选择阶段"
+                value={currentPhaseId}
+                onChange={(value: number) => {
+                  setCurrentPhaseId(value);
+                  loadPhaseDeliverables(value);
+                }}
+                allowClear
+              >
+                {phases.map((phase) => (
+                  <Option key={phase.id} value={phase.id}>
+                    {phase.phase_name}
+                  </Option>
                 ))}
-              </Collapse>
-            ) : (
-              <EmptyState />
+              </Select>
+            </Space>
+            {currentPhaseId && (
+              <Button type="primary" icon={<PlusOutlined />} onClick={handleAddDeliverable}>
+                添加成果
+              </Button>
             )}
           </div>
-        )}
 
-        {activeTab === 'deliverables' && (
-          <div>
-            <Collapse defaultActiveKey={phases.length > 0 ? [String(phases[0].id)] : []}>
-              {phases.map(phase => (
-                <Panel
-                  key={phase.id}
-                  header={
-                    <Space>
-                      <span style={{ fontWeight: 600 }}>{phase.phase_name}</span>
-                      <Tag color={PhaseStatusColorMap[phase.status] as any}>{PhaseStatusMap[phase.status]}</Tag>
-                    </Space>
-                  }
-                  extra={
-                    <Button
-                      size="small"
-                      icon={<PlusOutlined />}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setCurrentPhaseForDeliverable(phase.id);
-                        deliverableForm.resetFields();
-                        setDeliverableModalVisible(true);
-                      }}
-                      disabled={!canManage}
-                    >
-                      添加成果物
-                    </Button>
-                  }
-                >
-                  {loadPhaseDeliverables(phase.id) || null}
-                  <Table
-                    columns={deliverablesColumns}
-                    dataSource={phaseDeliverables[phase.id] || []}
-                    loading={deliverablesLoading[phase.id]}
-                    rowKey="id"
-                    pagination={false}
-                    expandable={{
-                      expandedRowRender: (record) => (
-                        <div>
-                          {record.attachments && record.attachments.length > 0 ? (
-                            <List
-                              size="small"
-                              dataSource={record.attachments}
-                              renderItem={(att) => (
-                                <List.Item
-                                  key={att.id}
-                                  actions={[
-                                    <a
-                                      key="download"
-                                      href={projectExecutionApi.downloadAttachment(att.id)}
-                                      target="_blank"
-                                      rel="noreferrer"
-                                    >
-                                      <DownloadOutlined /> 下载
-                                    </a>,
-                                    canManage ? (
-                                      <Popconfirm
-                                        key="delete"
-                                        title="删除此附件？"
-                                        onConfirm={() => handleDeleteAttachment(att.id, record.id, phase.id)}
-                                      >
-                                        <a style={{ color: '#ff4d4f' }}>
-                                          <DeleteOutlined /> 删除
-                                        </a>
-                                      </Popconfirm>
-                                    ) : null
-                                  ]}
-                                >
-                                  <List.Item.Meta
-                                    avatar={<FileTextOutlined style={{ fontSize: 20 }} />}
-                                    title={
-                                      <Space>
-                                        <span>{att.original_name}</span>
-                                        <Tag color="blue">v{att.version}</Tag>
-                                      </Space>
-                                    }
-                                    description={
-                                      <Space split="|">
-                                        <span>{formatFileSize(att.file_size)}</span>
-                                        <span>{att.uploaded_by || 'unknown'}</span>
-                                        <span>{dayjs(att.uploaded_at).format('YYYY-MM-DD HH:mm')}</span>
-                                      </Space>
-                                    }
-                                  />
-                                </List.Item>
-                              )}
-                            />
-                          ) : (
-                            <div style={{ color: '#999', padding: 8 }}>暂无附件</div>
-                          )}
-                        </div>
-                      ),
-                      rowExpandable: (record) => (record.attachment_count || 0) > 0
-                    }}
-                  />
-                </Panel>
-              ))}
-            </Collapse>
-          </div>
-        )}
-
-        {activeTab === 'acceptance' && (
-          <div>
-            <div style={{ marginBottom: 16 }}>
-              <Button
-                type="primary"
-                icon={<PlusOutlined />}
-                onClick={() => {
-                  setEditingAcceptanceNode(null);
-                  acceptanceForm.resetFields();
-                  acceptanceForm.setFieldsValue({ node_type: 'custom' });
-                  setAcceptanceModalVisible(true);
-                }}
-                disabled={!canManage}
-              >
-                新增验收节点
-              </Button>
-            </div>
-
+          {currentPhaseId ? (
             <Table
-              columns={acceptanceColumns}
-              dataSource={acceptanceNodes}
+              dataSource={phaseDeliverables}
+              columns={deliverableColumns}
               rowKey="id"
+              size="small"
+              loading={deliverableLoading}
               pagination={false}
-              expandable={{
-                expandedRowRender: (record) => (
+              locale={{ emptyText: <Empty description="暂无成果数据" /> }}
+            />
+          ) : (
+            <Empty description="请先选择阶段" />
+          )}
+        </div>
+      )
+    },
+    {
+      key: 'acceptance',
+      label: (
+        <span>
+          <AuditOutlined />
+          验收节点
+        </span>
+      ),
+      children: (
+        <div>
+          <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <Space>
+              <span>选择阶段：</span>
+              <Select
+                style={{ width: 250 }}
+                placeholder="请选择阶段"
+                value={currentPhaseId}
+                onChange={(value: number) => {
+                  setCurrentPhaseId(value);
+                  loadAcceptanceNodes(value);
+                }}
+                allowClear
+              >
+                {phases.map((phase) => (
+                  <Option key={phase.id} value={phase.id}>
+                    {phase.phase_name}
+                  </Option>
+                ))}
+              </Select>
+            </Space>
+            {currentPhaseId && (
+              <Button type="primary" icon={<PlusOutlined />} onClick={handleAddAcceptanceNode}>
+                添加节点
+              </Button>
+            )}
+          </div>
+
+          {currentPhaseId ? (
+            <Table
+              dataSource={phaseAcceptanceNodes}
+              columns={acceptanceColumns}
+              rowKey="id"
+              size="small"
+              loading={acceptanceLoading}
+              pagination={false}
+              locale={{ emptyText: <Empty description="暂无验收节点" /> }}
+            />
+          ) : (
+            <Empty description="请先选择阶段" />
+          )}
+        </div>
+      )
+    },
+    {
+      key: 'logs',
+      label: (
+        <span>
+          <HistoryOutlined />
+          进度日志
+        </span>
+      ),
+      children: (
+        <div>
+          {progressLogs.length > 0 ? (
+            <Timeline
+              items={progressLogs.map((log) => ({
+                color: log.progress_after > (log.progress_before || 0) ? 'green' : log.status_after === 'delayed' ? 'orange' : 'blue',
+                children: (
                   <div>
-                    <Descriptions column={2} size="small" style={{ marginBottom: 16 }}>
-                      <Descriptions.Item label="节点说明">{record.description || '-'}</Descriptions.Item>
-                      <Descriptions.Item label="验收标准">{record.acceptance_criteria || '-'}</Descriptions.Item>
-                    </Descriptions>
-                    {record.records && record.records.length > 0 && (
-                      <div>
-                        <h4 style={{ marginBottom: 12 }}>验收历史</h4>
-                        <Timeline>
-                          {record.records.map(r => (
-                            <Timeline.Item
-                              key={r.id}
-                              color={
-                                r.result === 'passed' ? 'green' :
-                                r.result === 'failed' ? 'red' : 'orange'
-                              }
-                            >
-                              <Card size="small" style={{ marginBottom: 8 }}>
-                                <Row gutter={16}>
-                                  <Col span={12}>
-                                    <Space>
-                                      <Tag color={
-                                        r.result === 'passed' ? 'green' :
-                                        r.result === 'failed' ? 'red' : 'orange'
-                                      }>
-                                        <strong>{AcceptanceResultMap[r.result]}</strong>
-                                      </Tag>
-                                      {r.score !== null && (
-                                        <Rate disabled allowHalf value={r.score / 20} count={5} />
-                                      )}
-                                      {r.score !== null && <span>({r.score}分)</span>}
-                                    </Space>
-                                  </Col>
-                                  <Col span={12} style={{ textAlign: 'right', color: '#888' }}>
-                                    <MessageOutlined /> {r.accepted_by} · {dayjs(r.accepted_at).format('YYYY-MM-DD HH:mm')}
-                                  </Col>
-                                </Row>
-                                {r.comment && (
-                                  <p style={{ marginTop: 8, marginBottom: 8 }}>
-                                    <strong>验收意见：</strong>{r.comment}
-                                  </p>
-                                )}
-                                {r.issues_found && (
-                                  <p style={{ marginBottom: 8, color: '#cf1322' }}>
-                                    <strong>发现问题：</strong>{r.issues_found}
-                                  </p>
-                                )}
-                                {r.suggestions && (
-                                  <p style={{ marginBottom: 0, color: '#389e0d' }}>
-                                    <strong>改进建议：</strong>{r.suggestions}
-                                  </p>
-                                )}
-                              </Card>
-                            </Timeline.Item>
-                          ))}
-                        </Timeline>
+                    <div style={{ fontWeight: 500 }}>
+                      进度更新: {log.progress_before || 0}% → {log.progress_after || 0}%
+                    </div>
+                    {log.status_before && log.status_after && log.status_before !== log.status_after && (
+                      <div style={{ fontSize: 13, color: '#666', marginTop: 4 }}>
+                        状态变更: {PhaseStatusMap[log.status_before as PhaseStatus] || log.status_before} →{' '}
+                        {PhaseStatusMap[log.status_after as PhaseStatus] || log.status_after}
                       </div>
                     )}
+                    {log.update_note && (
+                      <div
+                        style={{
+                          fontSize: 13,
+                          color: '#666',
+                          marginTop: 4,
+                          padding: '4px 8px',
+                          background: '#f5f5f5',
+                          borderRadius: 4
+                        }}
+                      >
+                        备注: {log.update_note}
+                      </div>
+                    )}
+                    <div style={{ color: '#999', fontSize: 12, marginTop: 4 }}>
+                      <Space>
+                        {log.updated_by && <span>操作人: {log.updated_by}</span>}
+                        <span>{dayjs(log.created_at).format('YYYY-MM-DD HH:mm:ss')}</span>
+                      </Space>
+                    </div>
                   </div>
                 )
-              }}
+              }))}
             />
-          </div>
-        )}
+          ) : (
+            <Empty description="暂无进度日志" />
+          )}
+        </div>
+      )
+    }
+  ];
 
-        {activeTab === 'progress' && (
-          <div>
-            {progressLogs.length > 0 ? (
-              <Timeline mode="left">
-                {progressLogs.map(log => (
-                  <Timeline.Item
-                    key={log.id}
-                    label={dayjs(log.created_at).format('YYYY-MM-DD HH:mm')}
-                  >
-                    <Card size="small">
-                      <Row justify="space-between" align="middle">
-                        <Col>
-                          <Space>
-                            <Progress
-                              type="circle"
-                              size={40}
-                              percent={log.progress_value}
-                              format={(p) => `${p}%`}
-                            />
-                            <div>
-                              <div style={{ fontWeight: 600 }}>
-                                {log.phase_instance_id ? '阶段进度更新' : '项目整体进度更新'}
-                              </div>
-                              <div style={{ color: '#888', fontSize: 12 }}>
-                                {log.previous_progress}% → {log.progress_value}%
-                              </div>
-                            </div>
-                          </Space>
-                        </Col>
-                        <Col style={{ color: '#888' }}>
-                          {log.updated_by || 'unknown'}
-                        </Col>
-                      </Row>
-                      {log.update_note && (
-                        <p style={{ marginTop: 12, marginBottom: 0 }}>
-                          <MessageOutlined /> {log.update_note}
-                        </p>
-                      )}
-                    </Card>
-                  </Timeline.Item>
-                ))}
-              </Timeline>
-            ) : (
-              <EmptyState text="暂无进度更新日志" />
-            )}
-          </div>
-        )}
+  return (
+    <div>
+      <Card>
+        <Tabs activeKey={activeTab} onChange={setActiveTab} items={tabItems} type="card" />
       </Card>
 
       <Modal
-        title={editingPhase ? '编辑项目阶段' : '更新项目阶段'}
+        title={selectedPhase ? '编辑阶段进度' : '阶段详情'}
         open={phaseModalVisible}
+        onOk={handlePhaseSubmit}
         onCancel={() => {
           setPhaseModalVisible(false);
+          setSelectedPhase(null);
           phaseForm.resetFields();
-          setEditingPhase(null);
         }}
-        footer={null}
+        okText="保存"
+        cancelText="取消"
         width={600}
       >
-        <Form form={phaseForm} layout="vertical" onFinish={handleUpdatePhase}>
-          <Row gutter={16}>
-            <Col span={12}>
-              <Form.Item name="status" label="阶段状态" rules={[{ required: true }]}>
-                <Select>
-                  <Select.Option value="pending">待启动</Select.Option>
-                  <Select.Option value="in_progress">进行中</Select.Option>
-                  <Select.Option value="completed">已完成</Select.Option>
-                  <Select.Option value="delayed">已延期</Select.Option>
-                </Select>
-              </Form.Item>
-            </Col>
-            <Col span={12}>
-              <Form.Item name="progress" label="进度百分比" rules={[{ required: true }]}>
-                <InputNumber min={0} max={100} style={{ width: '100%' }} addonAfter="%" />
-              </Form.Item>
-            </Col>
-          </Row>
-          <Row gutter={16}>
-            <Col span={8}>
-              <Form.Item name="start_date" label="开始日期">
-                <DatePicker style={{ width: '100%' }} />
-              </Form.Item>
-            </Col>
-            <Col span={8}>
-              <Form.Item name="planned_end_date" label="计划完成日期">
-                <DatePicker style={{ width: '100%' }} />
-              </Form.Item>
-            </Col>
-            <Col span={8}>
-              <Form.Item name="actual_end_date" label="实际完成日期">
-                <DatePicker style={{ width: '100%' }} />
-              </Form.Item>
-            </Col>
-          </Row>
+        <Form form={phaseForm} layout="vertical">
+          <Form.Item
+            name="status"
+            label="阶段状态"
+            rules={[{ required: true, message: '请选择阶段状态' }]}
+          >
+            <Select placeholder="请选择阶段状态">
+              <Option value="pending">未开始</Option>
+              <Option value="in_progress">进行中</Option>
+              <Option value="completed">已完成</Option>
+              <Option value="delayed">已延期</Option>
+            </Select>
+          </Form.Item>
+          <Form.Item
+            name="progress"
+            label="进度 (%)"
+            rules={[{ required: true, message: '请输入进度值' }]}
+          >
+            <InputNumber min={0} max={100} style={{ width: '100%' }} />
+          </Form.Item>
+          <Form.Item name="start_date" label="开始日期">
+            <DatePicker style={{ width: '100%' }} format="YYYY-MM-DD" />
+          </Form.Item>
+          <Form.Item name="planned_end_date" label="计划完成日期">
+            <DatePicker style={{ width: '100%' }} format="YYYY-MM-DD" />
+          </Form.Item>
+          <Form.Item name="actual_end_date" label="实际完成日期">
+            <DatePicker style={{ width: '100%' }} format="YYYY-MM-DD" />
+          </Form.Item>
           <Form.Item name="responsible_person" label="负责人">
             <Input placeholder="请输入负责人姓名" />
           </Form.Item>
           <Form.Item name="remarks" label="备注">
-            <TextArea rows={2} placeholder="阶段备注说明" />
+            <TextArea rows={3} placeholder="请输入备注信息" />
           </Form.Item>
-          <Form.Item name="update_note" label="更新说明（可选）">
-            <TextArea rows={2} placeholder="本次进度更新的说明" />
-          </Form.Item>
-          <Form.Item style={{ marginBottom: 0, textAlign: 'right' }}>
-            <Space>
-              <Button onClick={() => {
-                setPhaseModalVisible(false);
-                phaseForm.resetFields();
-                setEditingPhase(null);
-              }}>取消</Button>
-              <Button type="primary" htmlType="submit">保存</Button>
-            </Space>
+          <Form.Item name="update_note" label="变更说明">
+            <TextArea rows={2} placeholder="请输入本次进度变更的说明" />
           </Form.Item>
         </Form>
       </Modal>
 
       <Modal
-        title="添加阶段成果物"
+        title={selectedDeliverable ? '编辑阶段成果' : '添加阶段成果'}
         open={deliverableModalVisible}
+        onOk={handleDeliverableSubmit}
         onCancel={() => {
           setDeliverableModalVisible(false);
+          setSelectedDeliverable(null);
           deliverableForm.resetFields();
-          setCurrentPhaseForDeliverable(null);
         }}
-        footer={null}
+        okText="保存"
+        cancelText="取消"
+        width={550}
       >
-        <Form form={deliverableForm} layout="vertical" onFinish={handleAddDeliverable}>
-          <Form.Item name="name" label="成果物名称" rules={[{ required: true, message: '请输入成果物名称' }]}>
-            <Input placeholder="如：项目计划书、测试报告等" />
+        <Form form={deliverableForm} layout="vertical">
+          <Form.Item
+            name="name"
+            label="成果名称"
+            rules={[{ required: true, message: '请输入成果名称' }]}
+          >
+            <Input placeholder="请输入成果名称" />
           </Form.Item>
-          <Form.Item name="description" label="成果物说明">
-            <TextArea rows={3} placeholder="成果物的详细说明和要求" />
+          <Form.Item name="description" label="成果描述">
+            <TextArea rows={3} placeholder="请输入成果描述" />
           </Form.Item>
-          <Row gutter={16}>
-            <Col span={12}>
-              <Form.Item name="required" label="是否必需" initialValue={1}>
-                <Select>
-                  <Select.Option value={1}>必需提交</Select.Option>
-                  <Select.Option value={0}>可选提交</Select.Option>
-                </Select>
-              </Form.Item>
-            </Col>
-            <Col span={12}>
-              <Form.Item name="sort_order" label="排序" initialValue={0}>
-                <InputNumber style={{ width: '100%' }} min={0} />
-              </Form.Item>
-            </Col>
-          </Row>
-          <Form.Item style={{ marginBottom: 0, textAlign: 'right' }}>
-            <Space>
-              <Button onClick={() => {
-                setDeliverableModalVisible(false);
-                deliverableForm.resetFields();
-                setCurrentPhaseForDeliverable(null);
-              }}>取消</Button>
-              <Button type="primary" htmlType="submit">添加</Button>
-            </Space>
-          </Form.Item>
-        </Form>
-      </Modal>
-
-      <Modal
-        title={editingAcceptanceNode ? '编辑验收节点' : '新增验收节点'}
-        open={acceptanceModalVisible}
-        onCancel={() => {
-          setAcceptanceModalVisible(false);
-          acceptanceForm.resetFields();
-          setEditingAcceptanceNode(null);
-        }}
-        footer={null}
-        width={600}
-      >
-        <Form form={acceptanceForm} layout="vertical" onFinish={handleAddAcceptanceNode}>
-          <Row gutter={16}>
-            <Col span={16}>
-              <Form.Item name="node_name" label="验收节点名称" rules={[{ required: true, message: '请输入验收节点名称' }]}>
-                <Input placeholder="如：中期检查、最终验收等" />
-              </Form.Item>
-            </Col>
-            <Col span={8}>
-              <Form.Item name="node_type" label="节点类型" rules={[{ required: true }]}>
-                <Select>
-                  <Select.Option value="custom">自定义</Select.Option>
-                  <Select.Option value="phase">阶段验收</Select.Option>
-                  <Select.Option value="final">最终验收</Select.Option>
-                </Select>
-              </Form.Item>
-            </Col>
-          </Row>
-          <Form.Item name="phase_instance_id" label="关联阶段（可选）">
-            <Select allowClear placeholder="选择关联的项目阶段">
-              {phases.map(p => (
-                <Select.Option key={p.id} value={p.id}>{p.phase_name}</Select.Option>
-              ))}
+          <Form.Item name="required" label="是否必交" valuePropName="checked">
+            <Select>
+              <Option value={true}>必交</Option>
+              <Option value={false}>选交</Option>
             </Select>
           </Form.Item>
-          <Form.Item name="planned_date" label="计划验收日期">
-            <DatePicker style={{ width: '100%' }} />
-          </Form.Item>
-          <Form.Item name="description" label="节点说明">
-            <TextArea rows={2} placeholder="验收节点的说明" />
-          </Form.Item>
-          <Form.Item name="acceptance_criteria" label="验收标准">
-            <TextArea rows={3} placeholder="详细的验收通过标准" />
-          </Form.Item>
-          <Form.Item style={{ marginBottom: 0, textAlign: 'right' }}>
-            <Space>
-              <Button onClick={() => {
-                setAcceptanceModalVisible(false);
-                acceptanceForm.resetFields();
-                setEditingAcceptanceNode(null);
-              }}>取消</Button>
-              <Button type="primary" htmlType="submit">{editingAcceptanceNode ? '保存' : '新增'}</Button>
-            </Space>
+          {selectedDeliverable && (
+            <>
+              <Form.Item name="status" label="状态">
+                <Select placeholder="请选择状态">
+                  <Option value="pending">待提交</Option>
+                  <Option value="submitted">已提交</Option>
+                  <Option value="reviewing">审核中</Option>
+                  <Option value="approved">已通过</Option>
+                  <Option value="rejected">已驳回</Option>
+                </Select>
+              </Form.Item>
+              <Form.Item name="remark" label="备注">
+                <TextArea rows={2} placeholder="请输入备注" />
+              </Form.Item>
+            </>
+          )}
+          <Form.Item name="sort_order" label="排序">
+            <InputNumber style={{ width: '100%' }} />
           </Form.Item>
         </Form>
       </Modal>
 
       <Modal
-        title={
-          currentAcceptanceNode
-            ? `提交验收记录 - ${currentAcceptanceNode.node_name}`
-            : '提交验收记录'
-        }
-        open={acceptanceRecordModalVisible}
+        title="成果附件"
+        open={attachmentModalVisible}
         onCancel={() => {
-          setAcceptanceRecordModalVisible(false);
-          acceptanceRecordForm.resetFields();
-          setCurrentAcceptanceNode(null);
+          setAttachmentModalVisible(false);
+          setCurrentDeliverableId(null);
+          setAttachments([]);
+          setFileList([]);
         }}
+        footer={null}
+        width={700}
+      >
+        <div style={{ marginBottom: 16 }}>
+          <Upload
+            multiple
+            fileList={fileList}
+            onChange={({ fileList: newFileList }) => setFileList(newFileList)}
+            customRequest={handleUpload}
+            showUploadList
+          >
+            <Button icon={<UploadOutlined />}>上传附件</Button>
+          </Upload>
+        </div>
+        <Spin spinning={attachmentLoading}>
+          {attachments.length > 0 ? (
+            <List
+              size="small"
+              dataSource={attachments}
+              renderItem={(item) => (
+                <List.Item
+                  actions={[
+                    <Button
+                      type="link"
+                      size="small"
+                      icon={<DownloadOutlined />}
+                      onClick={() => window.open(getAttachmentDownloadUrl(item.id), '_blank')}
+                    >
+                      下载
+                    </Button>,
+                    <Button
+                      type="link"
+                      size="small"
+                      danger
+                      icon={<DeleteOutlined />}
+                      onClick={() => handleDeleteAttachment(item)}
+                    >
+                      删除
+                    </Button>
+                  ]}
+                >
+                  <List.Item.Meta
+                    avatar={<FileTextOutlined style={{ fontSize: 24, color: '#1890ff' }} />}
+                    title={item.original_name}
+                    description={
+                      <Space size="small">
+                        <span style={{ fontSize: 12, color: '#999' }}>
+                          {formatFileSize(item.file_size)}
+                        </span>
+                        {item.uploaded_by && (
+                          <span style={{ fontSize: 12, color: '#999' }}>
+                            上传人: {item.uploaded_by}
+                          </span>
+                        )}
+                        <span style={{ fontSize: 12, color: '#999' }}>
+                          {dayjs(item.created_at).format('YYYY-MM-DD HH:mm')}
+                        </span>
+                      </Space>
+                    }
+                  />
+                </List.Item>
+              )}
+            />
+          ) : (
+            <Empty description="暂无附件" />
+          )}
+        </Spin>
+      </Modal>
+
+      <Modal
+        title={selectedAcceptanceNode ? '编辑验收节点' : '添加验收节点'}
+        open={acceptanceModalVisible}
+        onOk={handleAcceptanceSubmit}
+        onCancel={() => {
+          setAcceptanceModalVisible(false);
+          setSelectedAcceptanceNode(null);
+          acceptanceForm.resetFields();
+        }}
+        okText="保存"
+        cancelText="取消"
+        width={550}
+      >
+        <Form form={acceptanceForm} layout="vertical">
+          <Form.Item
+            name="name"
+            label="节点名称"
+            rules={[{ required: true, message: '请输入节点名称' }]}
+          >
+            <Input placeholder="请输入节点名称" />
+          </Form.Item>
+          <Form.Item name="description" label="节点描述">
+            <TextArea rows={3} placeholder="请输入节点描述" />
+          </Form.Item>
+          {selectedAcceptanceNode && (
+            <>
+              <Form.Item name="status" label="验收状态">
+                <Select placeholder="请选择状态">
+                  <Option value="pending">待验收</Option>
+                  <Option value="submitted">已提交</Option>
+                  <Option value="reviewing">验收中</Option>
+                  <Option value="passed">已通过</Option>
+                  <Option value="failed">未通过</Option>
+                </Select>
+              </Form.Item>
+              <Form.Item name="comment" label="验收意见">
+                <TextArea rows={3} placeholder="请输入验收意见" />
+              </Form.Item>
+            </>
+          )}
+          <Form.Item name="sort_order" label="排序">
+            <InputNumber style={{ width: '100%' }} />
+          </Form.Item>
+        </Form>
+      </Modal>
+
+      <Modal
+        title="验收记录"
+        open={acceptanceRecordModalVisible}
+        onCancel={() => setAcceptanceRecordModalVisible(false)}
         footer={null}
         width={600}
       >
-        <Form form={acceptanceRecordForm} layout="vertical" onFinish={handleSubmitAcceptanceRecord}>
-          {currentAcceptanceNode?.acceptance_criteria && (
-            <div style={{
-              padding: 12,
-              background: '#f0f5ff',
-              borderRadius: 4,
-              marginBottom: 16,
-              border: '1px solid #adc6ff'
-            }}>
-              <div style={{ fontWeight: 600, marginBottom: 4 }}><CheckCircleOutlined /> 验收标准：</div>
-              <div style={{ whiteSpace: 'pre-wrap' }}>{currentAcceptanceNode.acceptance_criteria}</div>
-            </div>
+        <Spin spinning={recordLoading}>
+          {acceptanceRecords.length > 0 ? (
+            <Timeline
+              items={acceptanceRecords.map((record) => ({
+                color: record.action === 'passed' ? 'green' : record.action === 'failed' ? 'red' : 'blue',
+                children: (
+                  <div>
+                    <div style={{ fontWeight: 500 }}>
+                      操作: {AcceptanceStatusMap[record.action as AcceptanceStatus] || record.action}
+                    </div>
+                    {record.comment && (
+                      <div
+                        style={{
+                          fontSize: 13,
+                          color: '#666',
+                          marginTop: 4,
+                          padding: '4px 8px',
+                          background: '#f5f5f5',
+                          borderRadius: 4
+                        }}
+                      >
+                        意见: {record.comment}
+                      </div>
+                    )}
+                    <div style={{ color: '#999', fontSize: 12, marginTop: 4 }}>
+                      <Space>
+                        {record.operator && <span>操作人: {record.operator}</span>}
+                        <span>{dayjs(record.created_at).format('YYYY-MM-DD HH:mm:ss')}</span>
+                      </Space>
+                    </div>
+                  </div>
+                )
+              }))}
+            />
+          ) : (
+            <Empty description="暂无验收记录" />
           )}
-          <Row gutter={16}>
-            <Col span={12}>
-              <Form.Item name="result" label="验收结果" rules={[{ required: true }]}>
-                <Select>
-                  <Select.Option value="passed">通过</Select.Option>
-                  <Select.Option value="conditional">有条件通过</Select.Option>
-                  <Select.Option value="failed">不通过</Select.Option>
-                </Select>
-              </Form.Item>
-            </Col>
-            <Col span={12}>
-              <Form.Item name="score" label="评分（0-100）">
-                <InputNumber min={0} max={100} style={{ width: '100%' }} addonAfter="分" />
-              </Form.Item>
-            </Col>
-          </Row>
-          <Form.Item name="comment" label="验收意见">
-            <TextArea rows={3} placeholder="详细的验收意见" />
-          </Form.Item>
-          <Form.Item name="issues_found" label="发现问题">
-            <TextArea rows={2} placeholder="验收过程中发现的问题" />
-          </Form.Item>
-          <Form.Item name="suggestions" label="改进建议">
-            <TextArea rows={2} placeholder="针对问题的改进建议" />
-          </Form.Item>
-          <Form.Item style={{ marginBottom: 0, textAlign: 'right' }}>
-            <Space>
-              <Button onClick={() => {
-                setAcceptanceRecordModalVisible(false);
-                acceptanceRecordForm.resetFields();
-                setCurrentAcceptanceNode(null);
-              }}>取消</Button>
-              <Button type="primary" htmlType="submit">提交验收</Button>
-            </Space>
-          </Form.Item>
-        </Form>
+        </Spin>
       </Modal>
     </div>
   );
 }
 
-function EmptyState({ text = '暂无数据' }: { text?: string }) {
-  return (
-    <div style={{ textAlign: 'center', padding: '60px 0', color: '#999' }}>
-      <FileTextOutlined style={{ fontSize: 48, marginBottom: 16, opacity: 0.3 }} />
-      <div>{text}</div>
-    </div>
-  );
-}
+export default ProjectExecution;

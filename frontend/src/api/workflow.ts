@@ -1,5 +1,5 @@
 import api from './request';
-import type { WorkflowStep, ApprovalRecord, ApiResponse, WorkflowInfo, WorkflowConfig, WorkflowRoleOption, ApprovalReasonCategory } from '../types';
+import type { WorkflowStep, ApprovalRecord, ApiResponse, WorkflowInfo, WorkflowConfig, WorkflowRoleOption } from '../types';
 
 export const getWorkflowSteps = () => {
   return api.get<any, ApiResponse<WorkflowStep[]>>('/workflow/steps');
@@ -7,11 +7,6 @@ export const getWorkflowSteps = () => {
 
 export const getStatusOptions = () => {
   return api.get<any, ApiResponse<{ value: string; label: string }[]>>('/workflow/status-options');
-};
-
-export const getApprovalReasonCategories = (actionType?: 'approve' | 'reject' | 'rollback') => {
-  const params = actionType ? { action_type: actionType } : {};
-  return api.get<any, ApiResponse<ApprovalReasonCategory[]>>('/workflow/reason-categories', { params });
 };
 
 export const getApprovalHistory = (declarationId: number) => {
@@ -22,15 +17,15 @@ export const getWorkflowInfo = (declarationId: number) => {
   return api.get<any, ApiResponse<WorkflowInfo>>(`/workflow/declaration/${declarationId}/workflow-info`);
 };
 
-export const approveDeclaration = (declarationId: number, data: { approver: string; comment: string; reason_category: string; step?: number }) => {
+export const approveDeclaration = (declarationId: number, data: { approver: string; comment?: string; step?: number }) => {
   return api.post<any, ApiResponse<{ status: string }>>(`/workflow/declaration/${declarationId}/approve`, data);
 };
 
-export const rejectDeclaration = (declarationId: number, data: { approver: string; comment: string; reason_category: string; step?: number }) => {
+export const rejectDeclaration = (declarationId: number, data: { approver: string; comment?: string; step?: number }) => {
   return api.post<any, ApiResponse<{ status: string }>>(`/workflow/declaration/${declarationId}/reject`, data);
 };
 
-export const rollbackDeclaration = (declarationId: number, data: { approver: string; comment: string; reason_category: string; target_step?: number }) => {
+export const rollbackDeclaration = (declarationId: number, data: { approver: string; comment?: string; target_step?: number }) => {
   return api.post<any, ApiResponse<{ status: string }>>(`/workflow/declaration/${declarationId}/rollback`, data);
 };
 

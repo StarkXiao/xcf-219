@@ -25,13 +25,13 @@ import {
   rollbackDeclaration, getWorkflowInfo, getApprovalReasonCategories
 } from '../api/workflow';
 import { getDeclarationTimeline } from '../api/logs';
+import ProjectExecution from './ProjectExecution';
 import { StatusMap, StatusColorMap } from '../types';
 import type {
   Declaration, Attachment, ApprovalRecord,
   OperationTimelineEvent, WorkflowInfo, MissingCheckResult,
   ApprovalReasonCategory, DeclarationResubmission
 } from '../types';
-import ProjectExecution from './ProjectExecution';
 
 const { TextArea } = Input;
 const { Option } = Select;

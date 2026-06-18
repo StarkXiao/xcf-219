@@ -324,8 +324,10 @@ function initDatabase() {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       declaration_id INTEGER NOT NULL,
       phase_instance_id INTEGER,
-      progress_value INTEGER NOT NULL,
-      previous_progress INTEGER DEFAULT 0,
+      progress_before INTEGER DEFAULT 0,
+      progress_after INTEGER DEFAULT 0,
+      status_before TEXT,
+      status_after TEXT,
       update_note TEXT,
       updated_by TEXT,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -336,69 +338,57 @@ function initDatabase() {
     CREATE TABLE IF NOT EXISTS phase_deliverables (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       phase_instance_id INTEGER NOT NULL,
-      declaration_id INTEGER NOT NULL,
       name TEXT NOT NULL,
       description TEXT,
-      file_type TEXT,
       required INTEGER DEFAULT 1,
       sort_order INTEGER DEFAULT 0,
+      submitted INTEGER DEFAULT 0,
+      submitted_at DATETIME,
+      submitted_by TEXT,
+      status TEXT DEFAULT 'pending',
+      remark TEXT,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY (phase_instance_id) REFERENCES project_phase_instances(id),
-      FOREIGN KEY (declaration_id) REFERENCES declarations(id)
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (phase_instance_id) REFERENCES project_phase_instances(id)
     );
 
     CREATE TABLE IF NOT EXISTS deliverable_attachments (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       deliverable_id INTEGER NOT NULL,
-      phase_instance_id INTEGER NOT NULL,
-      declaration_id INTEGER NOT NULL,
       filename TEXT NOT NULL,
       original_name TEXT NOT NULL,
       file_path TEXT NOT NULL,
       file_size INTEGER,
       file_type TEXT,
       uploaded_by TEXT,
-      uploaded_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      version INTEGER DEFAULT 1,
       remark TEXT,
-      FOREIGN KEY (deliverable_id) REFERENCES phase_deliverables(id),
-      FOREIGN KEY (phase_instance_id) REFERENCES project_phase_instances(id),
-      FOREIGN KEY (declaration_id) REFERENCES declarations(id)
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (deliverable_id) REFERENCES phase_deliverables(id)
     );
 
     CREATE TABLE IF NOT EXISTS acceptance_nodes (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
-      declaration_id INTEGER NOT NULL,
-      phase_instance_id INTEGER,
-      node_name TEXT NOT NULL,
-      node_type TEXT DEFAULT 'phase',
+      phase_instance_id INTEGER NOT NULL,
+      name TEXT NOT NULL,
       description TEXT,
-      planned_date DATE,
-      actual_date DATE,
+      sort_order INTEGER DEFAULT 0,
       status TEXT DEFAULT 'pending',
-      acceptance_criteria TEXT,
+      acceptance_date DATE,
+      accepted_by TEXT,
+      comment TEXT,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY (declaration_id) REFERENCES declarations(id),
       FOREIGN KEY (phase_instance_id) REFERENCES project_phase_instances(id)
     );
 
     CREATE TABLE IF NOT EXISTS acceptance_records (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
-      node_id INTEGER NOT NULL,
-      declaration_id INTEGER NOT NULL,
-      phase_instance_id INTEGER,
-      result TEXT NOT NULL,
-      score INTEGER,
+      acceptance_node_id INTEGER NOT NULL,
+      action TEXT NOT NULL,
       comment TEXT,
-      issues_found TEXT,
-      suggestions TEXT,
-      accepted_by TEXT NOT NULL,
-      accepted_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      attachments TEXT,
-      FOREIGN KEY (node_id) REFERENCES acceptance_nodes(id),
-      FOREIGN KEY (declaration_id) REFERENCES declarations(id),
-      FOREIGN KEY (phase_instance_id) REFERENCES project_phase_instances(id)
+      operator TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (acceptance_node_id) REFERENCES acceptance_nodes(id)
     );
   `);
 
@@ -431,20 +421,13 @@ function initDatabase() {
   safeCreateIndex('idx_enterprise_profiles_name', 'enterprise_profiles', 'company_name');
   safeCreateIndex('idx_enterprise_profiles_applicant', 'enterprise_profiles', 'applicant');
   safeCreateIndex('idx_declaration_resubmissions_declaration', 'declaration_resubmissions', 'declaration_id');
-
   safeCreateIndex('idx_project_phases_guideline', 'project_phases', 'guideline_id');
   safeCreateIndex('idx_project_phase_instances_declaration', 'project_phase_instances', 'declaration_id');
-  safeCreateIndex('idx_project_phase_instances_phase', 'project_phase_instances', 'phase_id');
   safeCreateIndex('idx_project_progress_logs_declaration', 'project_progress_logs', 'declaration_id');
-  safeCreateIndex('idx_project_progress_logs_phase', 'project_progress_logs', 'phase_instance_id');
   safeCreateIndex('idx_phase_deliverables_phase', 'phase_deliverables', 'phase_instance_id');
-  safeCreateIndex('idx_phase_deliverables_declaration', 'phase_deliverables', 'declaration_id');
   safeCreateIndex('idx_deliverable_attachments_deliverable', 'deliverable_attachments', 'deliverable_id');
-  safeCreateIndex('idx_deliverable_attachments_declaration', 'deliverable_attachments', 'declaration_id');
-  safeCreateIndex('idx_acceptance_nodes_declaration', 'acceptance_nodes', 'declaration_id');
   safeCreateIndex('idx_acceptance_nodes_phase', 'acceptance_nodes', 'phase_instance_id');
-  safeCreateIndex('idx_acceptance_records_node', 'acceptance_records', 'node_id');
-  safeCreateIndex('idx_acceptance_records_declaration', 'acceptance_records', 'declaration_id');
+  safeCreateIndex('idx_acceptance_records_node', 'acceptance_records', 'acceptance_node_id');
 
   const guidelineCount = get('SELECT COUNT(*) as count FROM guidelines');
   if (guidelineCount.count === 0) {
@@ -704,35 +687,26 @@ function initDatabase() {
     }
   }
 
-  const phaseCount = get('SELECT COUNT(*) as count FROM project_phases');
-  if (phaseCount.count === 0) {
+  const projectPhaseCount = get('SELECT COUNT(*) as count FROM project_phases');
+  if (projectPhaseCount.count === 0) {
     const insertPhase = db.prepare(`
       INSERT INTO project_phases (guideline_id, name, code, description, sort_order, expected_duration, requires_acceptance)
       VALUES (?, ?, ?, ?, ?, ?, ?)
     `);
 
-    const phases = [
-      [null, '项目启动', 'startup', '组建项目团队、明确项目目标和范围、制定详细项目计划', 1, 15, 0],
-      [null, '需求分析与设计', 'requirement_design', '完成需求调研分析、系统架构设计、详细设计文档', 2, 30, 1],
-      [null, '研发实施', 'development', '按照设计方案进行编码开发、单元测试、集成测试', 3, 90, 0],
-      [null, '中期检查', 'midterm_check', '项目中期进展检查、阶段性成果验收、问题与风险评估', 4, 15, 1],
-      [null, '测试与优化', 'testing', '系统测试、性能优化、Bug修复、用户验收测试', 5, 30, 0],
-      [null, '试运行与培训', 'pilot_training', '系统部署上线试运行、用户操作培训、问题收集与改进', 6, 20, 1],
-      [null, '最终验收', 'final_acceptance', '项目最终验收、文档归档、成果总结与交付', 7, 15, 1]
+    const defaultPhases = [
+      { name: '项目启动阶段', code: 'initiation', desc: '组建项目团队、明确项目目标和范围、制定详细项目计划', duration: 14, requiresAcceptance: 0 },
+      { name: '需求分析阶段', code: 'requirements', desc: '完成需求调研分析、系统架构设计、详细设计文档', duration: 21, requiresAcceptance: 1 },
+      { name: '开发实施阶段', code: 'development', desc: '按照设计方案进行编码开发、单元测试、集成测试', duration: 60, requiresAcceptance: 0 },
+      { name: '中期检查阶段', code: 'midterm', desc: '项目中期进展检查、阶段性成果验收、问题与风险评估', duration: 7, requiresAcceptance: 1 },
+      { name: '测试优化阶段', code: 'testing', desc: '系统测试、性能优化、Bug修复、用户验收测试', duration: 30, requiresAcceptance: 1 },
+      { name: '部署上线阶段', code: 'deployment', desc: '系统部署上线试运行、用户操作培训、问题收集与改进', duration: 14, requiresAcceptance: 0 },
+      { name: '验收交付阶段', code: 'acceptance', desc: '项目最终验收、文档归档、成果总结与交付', duration: 14, requiresAcceptance: 1 }
     ];
 
-    phases.forEach(p => insertPhase.run(...p));
-
-    const guidelinePhases = [
-      [1, '方案论证', 'proposal', '项目可行性分析与技术方案论证', 1, 20, 1],
-      [1, '关键技术攻关', 'key_tech', '核心技术研发与原型验证', 2, 60, 1],
-      [1, '系统集成', 'integration', '各模块集成与联调测试', 3, 45, 0],
-      [1, '样机研制', 'prototype', '原型样机制作与性能测试', 4, 50, 1],
-      [1, '小批量试产', 'pilot_production', '小批量生产验证与工艺优化', 5, 40, 1],
-      [1, '项目验收', 'acceptance', '项目总结与最终验收', 6, 20, 1]
-    ];
-
-    guidelinePhases.forEach(p => insertPhase.run(...p));
+    defaultPhases.forEach((phase, index) => {
+      insertPhase.run(null, phase.name, phase.code, phase.desc, index + 1, phase.duration, phase.requiresAcceptance);
+    });
 
     console.log('初始化默认项目阶段模板完成');
   }

@@ -2,21 +2,19 @@ import { useEffect, useState, useRef, useCallback, useMemo } from 'react';
 import {
   Card, Form, Input, Select, Button, message, Steps, Upload, List, Tag, Space, Modal,
   Drawer, Timeline, Tooltip, Empty, Tabs, Alert, Divider, Row, Col, Statistic, Badge,
-  Progress, Collapse, Avatar, AutoComplete
+  Progress, Collapse, Avatar
 } from 'antd';
 import {
   ArrowLeftOutlined, UploadOutlined, InboxOutlined, DeleteOutlined, DownloadOutlined,
   SaveOutlined, HistoryOutlined, RollbackOutlined, DiffOutlined, ClockCircleOutlined,
   ThunderboltOutlined, ReloadOutlined, ExclamationCircleOutlined, SafetyOutlined,
   WarningOutlined, CheckCircleOutlined, InfoCircleOutlined, FileTextOutlined,
-  BankOutlined, ScheduleOutlined, SyncOutlined, CloseCircleOutlined
+  BankOutlined, ScheduleOutlined
 } from '@ant-design/icons';
-import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import dayjs from 'dayjs';
-import { getGuidelines, getGuidelineTemplates } from '../api/guidelines';
+import { useNavigate, useParams } from 'react-router-dom';
+import { getGuidelines } from '../api/guidelines';
 import { getDeclaration, createDeclaration, updateDeclaration, submitDeclaration, checkQualification } from '../api/declarations';
 import { getAttachments, uploadAttachments, deleteAttachment, downloadAttachment } from '../api/attachments';
-import { searchEnterprises, getEnterpriseProfileByName } from '../api/enterprise-profiles';
 import {
   autosaveDraft, saveVersion as saveVersionApi, getVersions, compareVersions,
   restoreVersion as restoreVersionApi, getSaveTypes, previewRestoreVersion
@@ -24,7 +22,7 @@ import {
 import type {
   Guideline, Declaration, Attachment, DeclarationVersion, DiffCompareResult,
   SaveTypeOption, VersionsListResponse, FieldDiff, RestorePreviewResult,
-  QualificationCheckResult, RiskItem, RiskLevel, EnterpriseProfile
+  QualificationCheckResult, RiskItem, RiskLevel
 } from '../types';
 
 const { TextArea } = Input;
@@ -44,7 +42,6 @@ const SAVE_TYPE_STYLE: Record<string, { color: string; bg: string }> = {
 function DeclarationForm() {
   const navigate = useNavigate();
   const { id } = useParams<{ id: string }>();
-  const [searchParams] = useSearchParams();
   const isEdit = !!id;
   const [form] = Form.useForm();
   
@@ -81,12 +78,6 @@ function DeclarationForm() {
   const [qualificationDrawerOpen, setQualificationDrawerOpen] = useState(false);
   const qualificationTimerRef = useRef<number | null>(null);
   const lastQualificationDataRef = useRef<string>('');
-
-  const [enterpriseOptions, setEnterpriseOptions] = useState<Array<{ value: string; label: React.ReactNode; enterprise: EnterpriseProfile }>>([]);
-  const [enterpriseSearchLoading, setEnterpriseSearchLoading] = useState(false);
-  const [selectedEnterprise, setSelectedEnterprise] = useState<EnterpriseProfile | null>(null);
-  const enterpriseSearchTimerRef = useRef<number | null>(null);
-  const [autoFillTipVisible, setAutoFillTipVisible] = useState(false);
 
   useEffect(() => {
     loadGuidelines();
@@ -125,81 +116,6 @@ function DeclarationForm() {
       qualificationTimerRef.current = window.setTimeout(() => {
         runQualificationCheck(checkData);
       }, 800);
-    }
-
-    if (changedValues.company !== undefined) {
-      const currentCompany = changedValues.company;
-      if (currentCompany && currentCompany.length >= 2) {
-        if (enterpriseSearchTimerRef.current) {
-          clearTimeout(enterpriseSearchTimerRef.current);
-        }
-        enterpriseSearchTimerRef.current = window.setTimeout(() => {
-          searchEnterpriseProfiles(currentCompany);
-        }, 300);
-      } else {
-        setEnterpriseOptions([]);
-        setSelectedEnterprise(null);
-      }
-    }
-  };
-
-  const searchEnterpriseProfiles = async (keyword: string) => {
-    try {
-      setEnterpriseSearchLoading(true);
-      const res = await searchEnterprises(keyword);
-      if (res.success && res.data) {
-        const options = res.data.map(ep => ({
-          value: ep.company_name,
-          label: (
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <div>
-                <div style={{ fontWeight: 500 }}>{ep.company_name}</div>
-                <div style={{ fontSize: 12, color: '#999', marginTop: 2 }}>
-                  {ep.applicant || '暂无联系人'} · {ep.phone || '暂无电话'}
-                </div>
-              </div>
-              <Tag color="blue" style={{ marginLeft: 8 }}>
-                {ep.declaration_count} 次申报
-              </Tag>
-            </div>
-          ),
-          enterprise: ep
-        }));
-        setEnterpriseOptions(options);
-      }
-    } catch (e) {
-      console.error('搜索企业信息失败:', e);
-    } finally {
-      setEnterpriseSearchLoading(false);
-    }
-  };
-
-  const handleEnterpriseSelect = (value: string, option: any) => {
-    const enterprise = option.enterprise as EnterpriseProfile;
-    setSelectedEnterprise(enterprise);
-
-    const currentValues = form.getFieldsValue(true);
-    const fieldsToFill: any = {};
-
-    if (enterprise.applicant && !currentValues.applicant) {
-      fieldsToFill.applicant = enterprise.applicant;
-    }
-    if (enterprise.phone && !currentValues.phone) {
-      fieldsToFill.phone = enterprise.phone;
-    }
-    if (enterprise.email && !currentValues.email) {
-      fieldsToFill.email = enterprise.email;
-    }
-
-    if (Object.keys(fieldsToFill).length > 0) {
-      form.setFieldsValue(fieldsToFill);
-      setAutoFillTipVisible(true);
-      setTimeout(() => setAutoFillTipVisible(false), 3000);
-
-      lastFormValuesRef.current = {
-        ...lastFormValuesRef.current,
-        ...fieldsToFill
-      };
     }
   };
 
@@ -358,52 +274,7 @@ function DeclarationForm() {
   const loadGuidelines = async () => {
     try {
       const res = await getGuidelines();
-      if (res.success) {
-        const guidelineList = res.data || [];
-        setGuidelines(guidelineList);
-
-        if (!isEdit) {
-          const paramGuidelineId = searchParams.get('guideline_id');
-          const paramTemplateId = searchParams.get('template_id');
-          const presetTitle = searchParams.get('title');
-          const presetContent = searchParams.get('content');
-
-          const presetValues: any = {};
-
-          if (paramGuidelineId) {
-            const gid = parseInt(paramGuidelineId);
-            presetValues.guideline_id = gid;
-            const matchedGuideline = guidelineList.find(g => g.id === gid);
-            if (matchedGuideline && !presetTitle) {
-              presetValues.title = `${matchedGuideline.title} - 申报`;
-            }
-
-            if (paramTemplateId) {
-              try {
-                const tplRes = await getGuidelineTemplates(gid);
-                if (tplRes.success && tplRes.data) {
-                  const template = tplRes.data.find(t => t.id === parseInt(paramTemplateId!)) 
-                    || tplRes.data.find(t => t.is_default === 1) 
-                    || tplRes.data[0];
-                  if (template && !presetContent) {
-                    presetValues.content = template.content;
-                  }
-                }
-              } catch (e) {
-                console.error('加载模板失败:', e);
-              }
-            }
-          }
-
-          if (presetTitle) presetValues.title = presetTitle;
-          if (presetContent) presetValues.content = presetContent;
-
-          if (Object.keys(presetValues).length > 0) {
-            form.setFieldsValue(presetValues);
-            lastFormValuesRef.current = { ...presetValues };
-          }
-        }
-      }
+      if (res.success) setGuidelines(res.data || []);
     } catch (error) {
       console.error('加载申报指南失败:', error);
     }
@@ -430,18 +301,6 @@ function DeclarationForm() {
         setVersionCount(data.version_count || 0);
         if (data.last_auto_save_at) setLastAutoSaveAt(new Date(data.last_auto_save_at));
         loadAttachments(parseInt(id));
-
-        if (data.company) {
-          try {
-            const epRes = await getEnterpriseProfileByName(data.company);
-            if (epRes.success && epRes.data) {
-              setSelectedEnterprise(epRes.data);
-            }
-          } catch (e) {
-            console.error('加载企业信息失败:', e);
-          }
-        }
-
         setTimeout(() => {
           runQualificationCheck({
             guideline_id: data.guideline_id,
@@ -836,27 +695,18 @@ function DeclarationForm() {
         <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
           <Button icon={<ArrowLeftOutlined />} onClick={() => navigate('/declarations')} />
           <h2 className="page-title" style={{ margin: 0 }}>
-            {isEdit ? (declaration?.status === 'rejected' ? '修改驳回申报' : '编辑申报') : '新建申报'}
+            {isEdit ? '编辑申报' : '新建申报'}
           </h2>
           {declaration && (
             <>
-              <Tag color={
-                declaration.status === 'draft' ? 'default' :
-                declaration.status === 'rejected' ? 'red' : 'blue'
-              }>
-                {declaration.status === 'draft' ? '草稿' :
-                 declaration.status === 'rejected' ? '已驳回' : '已提交'}
+              <Tag color={declaration.status === 'draft' ? 'default' : 'blue'}>
+                {declaration.status === 'draft' ? '草稿' : '已提交'}
               </Tag>
               {versionCount > 0 && (
                 <Tooltip title={`共 ${versionCount} 个历史版本`}>
                   <Tag color="geekblue" icon={<HistoryOutlined />}>v{versionCount}</Tag>
                 </Tooltip>
               )}
-              {declaration.resubmit_count ? (
-                <Tag color="purple" icon={<SyncOutlined />}>
-                  第 {declaration.resubmit_count} 次申报
-                </Tag>
-              ) : null}
             </>
           )}
           {declaration?.status === 'draft' && isEdit && (
@@ -952,109 +802,36 @@ function DeclarationForm() {
         </Card>
       )}
 
-      {declaration?.status === 'rejected' && declaration?.last_reject_reason && (
-        <Alert
-          type="error"
-          showIcon
-          message={
-            <Space>
-              <CloseCircleOutlined />
-              <span>
-                <strong>上次驳回原因</strong>
-                {declaration.last_rejected_at && (
-                  <span style={{ color: '#999', fontSize: 12, marginLeft: 8 }}>
-                    ({dayjs(declaration.last_rejected_at).format('YYYY-MM-DD HH:mm')})
-                  </span>
-                )}
-              </span>
-            </Space>
-          }
-          description={
-            <div>
-              <div style={{ marginBottom: 8 }}>{declaration.last_reject_reason}</div>
-              <div style={{ fontSize: 12, color: '#666' }}>
-                请根据驳回原因修改申报内容或补充附件材料，修改完成后点击"返回详情进行二次申报"，填写补充说明后将直接进入复核流程。
-              </div>
-            </div>
-          }
-          style={{ marginBottom: 16 }}
-        />
-      )}
-
-      {autoFillTipVisible && (
-        <Alert
-          message="企业信息已自动填充"
-          description="已根据企业历史申报记录自动填充联系人信息，您可以根据需要进行修改。"
-          type="success"
-          showIcon
-          icon={<SafetyOutlined />}
-          closable
-          onClose={() => setAutoFillTipVisible(false)}
-          style={{ marginBottom: 16 }}
-        />
-      )}
-
       <Card title="基本信息" style={{ marginBottom: 16 }}>
         <Form form={form} layout="vertical" onValuesChange={handleFormValuesChange}>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
             <Form.Item name="title" label="项目名称" rules={[{ required: true, message: '请输入项目名称' }]}>
-              <Input placeholder="请输入项目名称" disabled={!['draft', 'rejected'].includes(declaration?.status || '') && isEdit} />
+              <Input placeholder="请输入项目名称" disabled={declaration?.status !== 'draft' && isEdit} />
             </Form.Item>
             <Form.Item name="guideline_id" label="申报指南">
-              <Select placeholder="请选择申报指南" allowClear disabled={!['draft', 'rejected'].includes(declaration?.status || '') && isEdit}>
+              <Select placeholder="请选择申报指南" allowClear disabled={declaration?.status !== 'draft' && isEdit}>
                 {guidelines.map(g => <Option key={g.id} value={g.id}>{g.title}</Option>)}
               </Select>
             </Form.Item>
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
             <Form.Item name="applicant" label="申请人" rules={[{ required: true, message: '请输入申请人' }]}>
-              <Input 
-                placeholder="请输入申请人姓名" 
-                disabled={!['draft', 'rejected'].includes(declaration?.status || '') && isEdit} 
-                suffix={selectedEnterprise?.applicant ? <Tag color="green" style={{ marginRight: -8 }}>自动填充</Tag> : null}
-              />
+              <Input placeholder="请输入申请人姓名" disabled={declaration?.status !== 'draft' && isEdit} />
             </Form.Item>
-            <Form.Item 
-              name="company" 
-              label={
-                <Space>
-                  企业名称
-                  <Tooltip title="输入企业名称可搜索历史记录，选择后自动填充联系人信息">
-                    <InfoCircleOutlined style={{ color: '#999', fontSize: 12 }} />
-                  </Tooltip>
-                </Space>
-              } 
-              rules={[{ required: true, message: '请输入企业名称' }]}
-            >
-              <AutoComplete
-                options={enterpriseOptions}
-                onSelect={handleEnterpriseSelect}
-                placeholder="请输入企业名称，支持搜索历史企业"
-                disabled={!['draft', 'rejected'].includes(declaration?.status || '') && isEdit}
-                notFoundContent={enterpriseSearchLoading ? '搜索中...' : '暂无匹配企业'}
-              >
-                <Input />
-              </AutoComplete>
+            <Form.Item name="company" label="企业名称" rules={[{ required: true, message: '请输入企业名称' }]}>
+              <Input placeholder="请输入企业名称" disabled={declaration?.status !== 'draft' && isEdit} />
             </Form.Item>
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
             <Form.Item name="phone" label="联系电话">
-              <Input 
-                placeholder="请输入联系电话" 
-                disabled={!['draft', 'rejected'].includes(declaration?.status || '') && isEdit}
-                suffix={selectedEnterprise?.phone ? <Tag color="green" style={{ marginRight: -8 }}>自动填充</Tag> : null}
-              />
+              <Input placeholder="请输入联系电话" disabled={declaration?.status !== 'draft' && isEdit} />
             </Form.Item>
             <Form.Item name="email" label="电子邮箱">
-              <Input 
-                placeholder="请输入电子邮箱" 
-                disabled={!['draft', 'rejected'].includes(declaration?.status || '') && isEdit}
-                suffix={selectedEnterprise?.email ? <Tag color="green" style={{ marginRight: -8 }}>自动填充</Tag> : null}
-              />
+              <Input placeholder="请输入电子邮箱" disabled={declaration?.status !== 'draft' && isEdit} />
             </Form.Item>
           </div>
           <Form.Item name="content" label="项目内容" rules={[{ required: true, message: '请输入项目内容' }]}>
-            <TextArea rows={8} placeholder="请详细描述项目内容" disabled={!['draft', 'rejected'].includes(declaration?.status || '') && isEdit} />
+            <TextArea rows={8} placeholder="请详细描述项目内容" disabled={declaration?.status !== 'draft' && isEdit} />
           </Form.Item>
         </Form>
       </Card>
@@ -1062,7 +839,7 @@ function DeclarationForm() {
       <Card title="附件材料" style={{ marginBottom: 16 }}>
         {(isEdit || declaration) && (
           <>
-            <Dragger multiple beforeUpload={beforeUpload} showUploadList={false} disabled={!['draft', 'rejected'].includes(declaration?.status || '')} style={{ marginBottom: 16 }}>
+            <Dragger multiple beforeUpload={beforeUpload} showUploadList={false} disabled={declaration?.status !== 'draft'} style={{ marginBottom: 16 }}>
               <p className="ant-upload-drag-icon"><InboxOutlined /></p>
               <p className="ant-upload-text">点击或拖拽文件到此区域上传</p>
               <p className="ant-upload-hint">支持 PDF、Word、Excel、图片、压缩包等格式，单个文件不超过 10MB</p>
@@ -1074,7 +851,7 @@ function DeclarationForm() {
                   <List.Item
                     actions={[
                       <Button type="link" icon={<DownloadOutlined />} onClick={() => window.open(downloadAttachment(item.id))}>下载</Button>,
-                      ['draft', 'rejected'].includes(declaration?.status || '') && (
+                      declaration?.status === 'draft' && (
                         <Button type="link" danger icon={<DeleteOutlined />} onClick={() => handleDeleteAttachment(item)}>删除</Button>
                       )
                     ].filter(Boolean)}
@@ -1097,14 +874,6 @@ function DeclarationForm() {
           <>
             <Button icon={<SaveOutlined />} onClick={handleSave} loading={loading}>保存草稿</Button>
             <Button type="primary" onClick={handleSubmit} loading={loading}>提交申报</Button>
-          </>
-        )}
-        {declaration?.status === 'rejected' && (
-          <>
-            <Button icon={<SaveOutlined />} onClick={handleSave} loading={loading}>保存修改</Button>
-            <Button type="primary" icon={<SyncOutlined />} onClick={() => navigate(`/declarations/${id}`)}>
-              返回详情进行二次申报
-            </Button>
           </>
         )}
       </div>
