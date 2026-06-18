@@ -135,7 +135,7 @@ function DeclarationForm() {
     } catch (e) {}
   };
 
-  const runQualificationCheck = async (data?: any) => {
+  const runQualificationCheck = async (data?: any): Promise<QualificationCheckResult | null> => {
     try {
       const checkData = data || {
         ...form.getFieldsValue(true),
@@ -145,8 +145,11 @@ function DeclarationForm() {
       const res = await checkQualification(checkData);
       if (res.success && res.data) {
         setQualificationResult(res.data);
+        return res.data;
       }
+      return null;
     } catch (e) {
+      return null;
     } finally {
       setQualificationLoading(false);
     }
@@ -412,25 +415,32 @@ function DeclarationForm() {
     const declarationId = id ? parseInt(id) : declaration?.id;
     if (!declarationId) return;
 
-    await runQualificationCheck();
+    const latestResult = await runQualificationCheck();
 
-    const hasHighRisks = qualificationResult && !qualificationResult.can_submit;
+    const hasHighRisks = latestResult && !latestResult.can_submit;
+
+    const getScoreColor = (result: QualificationCheckResult | null) => {
+      if (!result) return '#1890ff';
+      if (result.score >= 80) return '#52c41a';
+      if (result.score >= 60) return '#faad14';
+      return '#ff4d4f';
+    };
 
     const modalContent = (
       <div>
         <p>确定要提交申报吗？提交后将进入审批流程，无法再编辑。</p>
-        {qualificationResult && (
+        {latestResult && (
           <div style={{ marginTop: 12 }}>
             <Alert
-              type={qualificationResult.can_submit ? 'success' : 'warning'}
+              type={latestResult.can_submit ? 'success' : 'warning'}
               showIcon
               message={
                 <Space>
                   <SafetyOutlined />
-                  <span>资格预审评分：<strong style={{ color: scoreColor }}>{qualificationResult.score}分</strong></span>
+                  <span>资格预审评分：<strong style={{ color: getScoreColor(latestResult) }}>{latestResult.score}分</strong></span>
                 </Space>
               }
-              description={qualificationResult.summary}
+              description={latestResult.summary}
             />
           </div>
         )}

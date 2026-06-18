@@ -743,7 +743,7 @@ router.post('/qualification-check', (req, res) => {
         totalChecks++;
         const sameGuidelineHistory = history.filter(d => d.guideline_id === guideline_id);
         const sameGuidelinePending = sameGuidelineHistory.filter(d => 
-          ['draft', 'submitted', 'reviewing', 'first_reviewed', 'second_reviewed'].includes(d.status)
+          ['submitted', 'reviewing', 'first_reviewed', 'second_reviewed'].includes(d.status)
         );
         if (sameGuidelinePending.length > 0) {
           risks.push({
