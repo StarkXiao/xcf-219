@@ -168,7 +168,7 @@ function WorkflowDemo() {
   };
 
   const currentStepIndex = workflowInfo?.current_step
-    ? steps.findIndex((s) => s.step_order === workflowInfo.current_step)
+    ? steps.findIndex((s) => s.step_order === workflowInfo.current_step?.step_order)
     : -1;
 
   const declarationColumns = [
@@ -236,13 +236,13 @@ function WorkflowDemo() {
               {steps.map((step) => (
                 <Step
                   key={step.id}
-                  title={step.step_name}
+                  title={step.step_name || step.name}
                   description={step.description}
                   status={
                     workflowInfo?.status === 'approved'
                       ? 'finish'
                       : workflowInfo?.status === 'rejected' &&
-                          step.step_order === (workflowInfo.current_step || 0)
+                          step.step_order === (workflowInfo.current_step?.step_order || 0)
                         ? 'error'
                         : undefined
                   }
@@ -338,7 +338,7 @@ function WorkflowDemo() {
               >
                 {steps.map((step) => (
                   <Option key={step.id} value={step.step_order}>
-                    {step.step_name}
+                    {step.step_name || step.name}
                   </Option>
                 ))}
               </Select>

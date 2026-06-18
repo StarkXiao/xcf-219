@@ -36,7 +36,7 @@ function GlobalSearch() {
   const [results, setResults] = useState<SearchResultItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [open, setOpen] = useState(false);
-  const searchRef = useRef<NodeJS.Timeout | null>(null);
+  const searchRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     if (keyword.trim()) {
@@ -199,7 +199,7 @@ function GlobalSearch() {
       onOpenChange={(isOpen) => {
         if (!isOpen) setOpen(false);
       }}
-      trigger={['focus']}
+      trigger={['click']}
       dropdownRender={dropdownContent}
       placement="bottomRight"
     >

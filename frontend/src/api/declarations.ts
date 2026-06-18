@@ -1,5 +1,5 @@
 import api from './request';
-import type { Declaration, ApiResponse, DeclarationStats, QualificationCheckResult } from '../types';
+import type { Declaration, ApiResponse, DeclarationStats, QualificationCheckResult, DeclarationResubmission } from '../types';
 
 export const getDeclarations = (params?: {
   status?: string;
@@ -66,5 +66,18 @@ export const checkQualification = (data: {
   return api.post<any, ApiResponse<QualificationCheckResult>>(
     '/declarations/qualification-check',
     data
+  );
+};
+
+export const resubmitDeclaration = (id: number, data: { supplement_note?: string }) => {
+  return api.post<any, ApiResponse<{ status: string }>>(
+    `/declarations/${id}/resubmit`,
+    data
+  );
+};
+
+export const getDeclarationResubmissions = (id: number) => {
+  return api.get<any, ApiResponse<DeclarationResubmission[]>>(
+    `/declarations/${id}/resubmissions`
   );
 };

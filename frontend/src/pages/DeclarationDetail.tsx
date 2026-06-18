@@ -105,7 +105,7 @@ function DeclarationDetail() {
       if (decRes.success) setDeclaration(decRes.data || null);
       if (attRes.success) setAttachments(attRes.data || []);
       if (histRes.success) setHistory(histRes.data || []);
-      if (timelineRes.success) setTimeline(timelineRes.data?.timeline || []);
+      if (timelineRes.success) setTimeline(timelineRes.data || []);
       if (wfRes.success) setWorkflowInfo(wfRes.data || null);
       if (resubmitRes.success) setResubmissions(resubmitRes.data || []);
 
@@ -265,7 +265,8 @@ function DeclarationDetail() {
     }
     try {
       if (id) {
-        await batchDownloadAttachments(parseInt(id), selectedAttachmentIds);
+        const downloadUrl = batchDownloadAttachments(parseInt(id));
+        window.open(downloadUrl);
         message.success('下载成功');
       }
     } catch {

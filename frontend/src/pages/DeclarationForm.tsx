@@ -255,7 +255,7 @@ function DeclarationForm() {
       setAutoSaveStatus('saving');
       const res = await autosaveDraft(currentId, currentValues);
       if (res.success) {
-        if (!res.skipped) {
+        if (!res.data?.skipped) {
           lastFormValuesRef.current = { ...currentValues };
           setLastAutoSaveAt(new Date());
           setVersionCount(res.data?.version_number || versionCount);
@@ -537,8 +537,8 @@ function DeclarationForm() {
     try {
       const res = await compareVersions({
         declaration_id: declaration.id,
-        version1: v1,
-        version2: v2,
+        v1,
+        v2,
         type
       });
       if (res.success) {
@@ -574,7 +574,7 @@ function DeclarationForm() {
         try {
           const res = await restoreVersionApi(restoreVersion.id);
           if (res.success) {
-            message.success(`版本恢复成功！新生成版本 v${res.data?.new_version_number}`);
+            message.success(`版本恢复成功！新生成版本 v${res.data?.version_number}`);
             setRestoreModalOpen(false);
             loadDeclaration();
             loadVersions(1);

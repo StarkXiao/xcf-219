@@ -402,6 +402,7 @@ export interface ApprovalRecord {
   step_role?: string;
   approver: string;
   action: string;
+  action_label?: string;
   comment: string;
   reason_category?: string;
   created_at: string;
@@ -410,6 +411,7 @@ export interface ApprovalRecord {
 export interface WorkflowStep {
   id: number;
   name: string;
+  step_name?: string;
   description: string;
   step_order: number;
   role: string;
@@ -447,6 +449,10 @@ export interface WorkflowInfo {
   config: { id: number | null; name: string };
   current_step: WorkflowConfigStep | null;
   steps: WorkflowConfigStep[];
+  status?: string;
+  can_approve?: boolean;
+  can_reject?: boolean;
+  can_rollback?: boolean;
   rollback_options: Array<{
     step_order: number;
     name: string;

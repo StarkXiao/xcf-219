@@ -52,4 +52,40 @@ router.get('/', (req, res) => {
   }
 });
 
+router.get('/timeline/:declarationId', (req, res) => {
+  try {
+    const { declarationId } = req.params;
+    const logs = all(
+      'SELECT * FROM operation_logs WHERE target_id = ? ORDER BY created_at DESC',
+      [declarationId]
+    );
+
+    const timeline = logs.map(log => {
+      let eventType = 'declaration';
+      if (log.module === '版本' || (log.action && log.action.includes('保存')) || (log.action && log.action.includes('版本'))) {
+        eventType = 'version';
+      } else if (log.module === '状态流转' || log.module === '审批' || (log.action && (log.action.includes('审批') || log.action.includes('提交') || log.action.includes('驳回') || log.action.includes('退回')))) {
+        eventType = 'workflow';
+      }
+
+      return {
+        id: log.id,
+        user: log.user,
+        action: log.action,
+        module: log.module,
+        target_id: log.target_id,
+        detail: log.detail,
+        version_number: log.version_number || null,
+        created_at: log.created_at,
+        timestamp: log.created_at,
+        event_type: eventType
+      };
+    });
+
+    res.json({ success: true, data: timeline });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
 module.exports = router;

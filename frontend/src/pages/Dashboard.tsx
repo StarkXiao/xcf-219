@@ -56,8 +56,8 @@ function Dashboard() {
   const recentDeclarations = declarations.slice(0, 5);
 
   const topGuidelines = policyMatchStats?.top_guidelines || [];
-  const matchRate = policyMatchStats?.total_matches > 0
-    ? Math.round((policyMatchStats.total_selections / policyMatchStats.total_matches) * 100)
+  const matchRate = (policyMatchStats?.total_matches ?? 0) > 0
+    ? Math.round(((policyMatchStats?.total_selections ?? 0) / (policyMatchStats?.total_matches ?? 1)) * 100)
     : 0;
 
   return (

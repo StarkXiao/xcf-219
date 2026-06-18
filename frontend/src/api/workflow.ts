@@ -1,5 +1,5 @@
 import api from './request';
-import type { WorkflowStep, ApprovalRecord, ApiResponse, WorkflowInfo, WorkflowConfig, WorkflowRoleOption } from '../types';
+import type { WorkflowStep, ApprovalRecord, ApiResponse, WorkflowInfo, WorkflowConfig, WorkflowRoleOption, ApprovalReasonCategory } from '../types';
 
 export const getWorkflowSteps = () => {
   return api.get<any, ApiResponse<WorkflowStep[]>>('/workflow/steps');
@@ -55,4 +55,11 @@ export const deleteWorkflowConfig = (id: number) => {
 
 export const getWorkflowRoles = () => {
   return api.get<any, ApiResponse<WorkflowRoleOption[]>>('/workflow-configs/roles/list');
+};
+
+export const getApprovalReasonCategories = (actionType?: 'approve' | 'reject' | 'rollback') => {
+  return api.get<any, ApiResponse<ApprovalReasonCategory[]>>(
+    '/workflow/reason-categories',
+    { params: actionType ? { action_type: actionType } : undefined }
+  );
 };

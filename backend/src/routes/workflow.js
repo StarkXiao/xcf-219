@@ -373,4 +373,27 @@ router.post('/declaration/:declarationId/rollback', (req, res) => {
   }
 });
 
+router.get('/reason-categories', (req, res) => {
+  try {
+    const { action_type } = req.query;
+    let categories = [
+      { id: 1, action_type: 'approve', code: 'compliant', name: '符合要求', description: '所有条件均满足', sort_order: 1, is_active: 1, created_at: new Date().toISOString(), updated_at: new Date().toISOString() },
+      { id: 2, action_type: 'approve', code: 'conditionally', name: '有条件通过', description: '需要补充材料后通过', sort_order: 2, is_active: 1, created_at: new Date().toISOString(), updated_at: new Date().toISOString() },
+      { id: 3, action_type: 'reject', code: 'non_compliant', name: '不符合要求', description: '关键条件不满足', sort_order: 1, is_active: 1, created_at: new Date().toISOString(), updated_at: new Date().toISOString() },
+      { id: 4, action_type: 'reject', code: 'incomplete', name: '材料不完整', description: '申报材料缺失', sort_order: 2, is_active: 1, created_at: new Date().toISOString(), updated_at: new Date().toISOString() },
+      { id: 5, action_type: 'reject', code: 'duplicate', name: '重复申报', description: '存在重复申报项目', sort_order: 3, is_active: 1, created_at: new Date().toISOString(), updated_at: new Date().toISOString() },
+      { id: 6, action_type: 'rollback', code: 'material_issue', name: '材料问题', description: '材料需要修改完善', sort_order: 1, is_active: 1, created_at: new Date().toISOString(), updated_at: new Date().toISOString() },
+      { id: 7, action_type: 'rollback', code: 'info_mismatch', name: '信息不符', description: '申报信息与实际不符', sort_order: 2, is_active: 1, created_at: new Date().toISOString(), updated_at: new Date().toISOString() }
+    ];
+
+    if (action_type) {
+      categories = categories.filter(c => c.action_type === action_type);
+    }
+
+    res.json({ success: true, data: categories });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
 module.exports = router;
