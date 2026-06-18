@@ -146,6 +146,8 @@ function initDatabase() {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       declaration_id INTEGER NOT NULL,
       step INTEGER NOT NULL,
+      step_name TEXT,
+      step_role TEXT,
       approver TEXT NOT NULL,
       action TEXT NOT NULL,
       comment TEXT,
@@ -206,6 +208,8 @@ function initDatabase() {
   safeAddColumn('attachments', 'material_type_id', 'INTEGER REFERENCES material_types(id)');
   safeAddColumn('attachments', 'file_hash', 'TEXT');
   safeAddColumn('declarations', 'workflow_config_id', 'INTEGER REFERENCES workflow_configs(id)');
+  safeAddColumn('approval_records', 'step_name', 'TEXT');
+  safeAddColumn('approval_records', 'step_role', 'TEXT');
   safeCreateIndex('idx_attachments_hash', 'attachments', 'file_hash');
   safeCreateIndex('idx_material_types_guideline', 'material_types', 'guideline_id');
   safeCreateIndex('idx_workflow_configs_guideline', 'workflow_configs', 'guideline_id');

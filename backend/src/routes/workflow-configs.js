@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { get, all, run } = require('../models/database');
+const db = require('../models/database').db;
 const { logOperation } = require('../middleware/logger');
 
 router.get('/', (req, res) => {
@@ -278,7 +279,5 @@ router.get('/roles/list', (req, res) => {
     res.status(500).json({ success: false, message: error.message });
   }
 });
-
-const db = require('../models/database').db;
 
 module.exports = router;

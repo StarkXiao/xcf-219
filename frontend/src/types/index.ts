@@ -21,6 +21,10 @@ export interface Declaration {
   content: string;
   status: string;
   current_step: number;
+  workflow_config_id?: number | null;
+  current_step_name?: string | null;
+  current_step_role?: string | null;
+  status_label?: string;
   created_at: string;
   updated_at: string;
   attachments?: Attachment[];
@@ -288,6 +292,7 @@ export interface ApprovalRecord {
   declaration_id: number;
   step: number;
   step_name?: string;
+  step_role?: string;
   approver: string;
   action: string;
   comment: string;

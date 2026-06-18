@@ -141,15 +141,31 @@ router.get('/declaration/:declarationId/workflow-info', (req, res) => {
 
 router.get('/declaration/:declarationId/history', (req, res) => {
   try {
+    const declaration = get('SELECT * FROM declarations WHERE id = ?', [req.params.declarationId]);
+    const configSteps = {};
+
+    if (declaration) {
+      const config = resolveConfig(declaration);
+      config.steps.forEach(s => {
+        configSteps[s.step_order] = { name: s.name, role: s.role };
+      });
+      configSteps[0] = { name: '草稿', role: '申请人' };
+    }
+
     const records = all(`
-      SELECT ar.*, ws.name as step_name
+      SELECT ar.*, ws.name as legacy_step_name
       FROM approval_records ar
       LEFT JOIN workflow_steps ws ON ar.step = ws.step_order
       WHERE ar.declaration_id = ?
       ORDER BY ar.created_at ASC
     `, [req.params.declarationId]);
 
-    res.json({ success: true, data: records });
+    const result = records.map(r => {
+      const stepName = r.step_name || configSteps[r.step]?.name || r.legacy_step_name || `步骤${r.step}`;
+      return { ...r, step_name: stepName, step_role: r.step_role || configSteps[r.step]?.role || '' };
+    });
+
+    res.json({ success: true, data: result });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }
@@ -187,9 +203,9 @@ router.post('/declaration/:declarationId/approve', (req, res) => {
     `, [nextStatus, nextStepOrder, declarationId]);
 
     run(`
-      INSERT INTO approval_records (declaration_id, step, approver, action, comment)
-      VALUES (?, ?, ?, ?, ?)
-    `, [declarationId, currentStep.step_order, approver || currentStep.role, '通过', comment || '']);
+      INSERT INTO approval_records (declaration_id, step, step_name, step_role, approver, action, comment)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `, [declarationId, currentStep.step_order, currentStep.name, currentStep.role, approver || currentStep.role, '通过', comment || '']);
 
     const updated = get('SELECT * FROM declarations WHERE id = ?', [declarationId]);
     const versionResult = saveVersion(null, declarationId, updated, SAVE_TYPES.STATUS_CHANGE, user,
@@ -232,6 +248,7 @@ router.post('/declaration/:declarationId/reject', (req, res) => {
     const config = resolveConfig(declaration);
     const currentStep = findCurrentStep(config, declaration);
     const stepName = currentStep ? currentStep.name : '未知步骤';
+    const stepRole = currentStep ? currentStep.role : (approver || '审批人');
 
     const beforeData = { ...declaration };
 
@@ -242,9 +259,9 @@ router.post('/declaration/:declarationId/reject', (req, res) => {
     `, [declarationId]);
 
     run(`
-      INSERT INTO approval_records (declaration_id, step, approver, action, comment)
-      VALUES (?, ?, ?, ?, ?)
-    `, [declarationId, step || declaration.current_step, approver || (currentStep ? currentStep.role : '审批人'), '驳回', comment || '']);
+      INSERT INTO approval_records (declaration_id, step, step_name, step_role, approver, action, comment)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `, [declarationId, step || declaration.current_step, stepName, stepRole, approver || stepRole, '驳回', comment || '']);
 
     const updated = get('SELECT * FROM declarations WHERE id = ?', [declarationId]);
     const versionResult = saveVersion(null, declarationId, updated, SAVE_TYPES.STATUS_CHANGE, user,
@@ -329,9 +346,9 @@ router.post('/declaration/:declarationId/rollback', (req, res) => {
     `, [rollbackStatus, rollbackStepOrder, declarationId]);
 
     run(`
-      INSERT INTO approval_records (declaration_id, step, approver, action, comment)
-      VALUES (?, ?, ?, ?, ?)
-    `, [declarationId, declaration.current_step, approver || (currentStep ? currentStep.role : '审批人'), '退回', comment || '']);
+      INSERT INTO approval_records (declaration_id, step, step_name, step_role, approver, action, comment)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `, [declarationId, declaration.current_step, currentStep.name, currentStep.role, approver || currentStep.role, '退回', comment || '']);
 
     const updated = get('SELECT * FROM declarations WHERE id = ?', [declarationId]);
     const versionResult = saveVersion(null, declarationId, updated, SAVE_TYPES.STATUS_CHANGE, user,

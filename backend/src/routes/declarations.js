@@ -19,6 +19,52 @@ function getCurrentUser(req) {
   return req.headers['x-user'] || 'anonymous';
 }
 
+function enrichDeclarationWorkflow(declaration) {
+  const result = { ...declaration };
+  let configId = declaration.workflow_config_id;
+
+  if (!configId && declaration.guideline_id) {
+    const cfg = get('SELECT id FROM workflow_configs WHERE guideline_id = ?', [declaration.guideline_id]);
+    if (cfg) configId = cfg.id;
+  }
+
+  if (!configId) {
+    result.current_step_name = null;
+    result.current_step_role = null;
+    result.status_label = STATUS_MAP[declaration.status] || declaration.status;
+    return result;
+  }
+
+  const step = get(
+    'SELECT name, role FROM workflow_config_steps WHERE config_id = ? AND pending_status = ?',
+    [configId, declaration.status]
+  );
+
+  if (step) {
+    result.current_step_name = step.name;
+    result.current_step_role = step.role;
+    result.status_label = `待${step.name}`;
+  } else if (declaration.status === 'approved') {
+    result.current_step_name = '已立项';
+    result.current_step_role = '系统';
+    result.status_label = '已立项';
+  } else if (declaration.status === 'rejected') {
+    result.current_step_name = '已驳回';
+    result.current_step_role = '系统';
+    result.status_label = '已驳回';
+  } else if (declaration.status === 'draft') {
+    result.current_step_name = '草稿';
+    result.current_step_role = '申请人';
+    result.status_label = '草稿';
+  } else {
+    result.current_step_name = null;
+    result.current_step_role = null;
+    result.status_label = STATUS_MAP[declaration.status] || declaration.status;
+  }
+
+  return result;
+}
+
 router.get('/', (req, res) => {
   try {
     const { status, keyword, applicant, include_deleted = 'false' } = req.query;
@@ -45,7 +91,7 @@ router.get('/', (req, res) => {
     }
 
     sql += ' ORDER BY d.created_at DESC';
-    const declarations = all(sql, params);
+    const declarations = all(sql, params).map(enrichDeclarationWorkflow);
     
     logOperation(req, '查询', '申报表单', null, `查询条件: status=${status || '全部'}`);
     
@@ -256,10 +302,30 @@ router.post('/:id/submit', (req, res) => {
     const beforeData = { ...declaration };
 
     let workflowConfigId = declaration.workflow_config_id;
+    let firstStepName = '初审';
+    let firstStepRole = '初审员';
+
     if (!workflowConfigId && declaration.guideline_id) {
       const config = get('SELECT id FROM workflow_configs WHERE guideline_id = ?', [declaration.guideline_id]);
       if (config) {
         workflowConfigId = config.id;
+        const firstStep = get(
+          'SELECT name, role FROM workflow_config_steps WHERE config_id = ? ORDER BY step_order LIMIT 1',
+          [config.id]
+        );
+        if (firstStep) {
+          firstStepName = firstStep.name;
+          firstStepRole = firstStep.role;
+        }
+      }
+    } else if (workflowConfigId) {
+      const firstStep = get(
+        'SELECT name, role FROM workflow_config_steps WHERE config_id = ? ORDER BY step_order LIMIT 1',
+        [workflowConfigId]
+      );
+      if (firstStep) {
+        firstStepName = firstStep.name;
+        firstStepRole = firstStep.role;
       }
     }
 
@@ -270,9 +336,9 @@ router.post('/:id/submit', (req, res) => {
     `, [workflowConfigId, req.params.id]);
 
     run(`
-      INSERT INTO approval_records (declaration_id, step, approver, action, comment)
-      VALUES (?, ?, ?, ?, ?)
-    `, [req.params.id, 1, '系统', '提交', '申报人提交申报材料']);
+      INSERT INTO approval_records (declaration_id, step, step_name, step_role, approver, action, comment)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `, [req.params.id, 1, firstStepName, firstStepRole, '系统', '提交', '申报人提交申报材料']);
 
     const updated = get('SELECT * FROM declarations WHERE id = ?', [req.params.id]);
     const versionResult = saveVersion(null, req.params.id, updated, SAVE_TYPES.SUBMIT, user, '提交申报，进入审批流程');

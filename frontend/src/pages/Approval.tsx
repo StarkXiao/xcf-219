@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import {
   Table, Button, Space, Tag, Modal, Form, Input, Select, message, Card,
   Tabs, Badge, List, Progress, Alert, Row, Col, Empty, Divider, Tooltip,
-  Popover, Radio, Steps
+  Radio, Steps
 } from 'antd';
 import {
   CheckOutlined, CloseOutlined, EyeOutlined, DownloadOutlined,
@@ -21,7 +21,7 @@ import {
 import { StatusColorMap } from '../types';
 import type {
   Declaration, ApprovalRecord, Attachment,
-  MissingCheckResult, DuplicatesResult, WorkflowInfo, WorkflowConfigStep
+  MissingCheckResult, DuplicatesResult, WorkflowInfo
 } from '../types';
 
 const { TextArea } = Input;
@@ -47,67 +47,6 @@ function Approval() {
   const [detailLoading, setDetailLoading] = useState(false);
 
   const [workflowInfo, setWorkflowInfo] = useState<WorkflowInfo | null>(null);
-  const [dynamicRoleMap, setDynamicRoleMap] = useState<Record<string, WorkflowConfigStep>>({});
-
-  const loadDynamicRoles = async () => {
-    try {
-      const allRes = await getDeclarations();
-      if (allRes.success && allRes.data) {
-        const roleMap: Record<string, WorkflowConfigStep> = {};
-        for (const decl of allRes.data) {
-          if (decl.status && ['submitted', 'first_reviewed', 'second_reviewed', 'reviewing'].includes(decl.status)) {
-            try {
-              const infoRes = await getWorkflowInfo(decl.id);
-              if (infoRes.success && infoRes.data?.steps) {
-                for (const step of infoRes.data.steps) {
-                  if (step.pending_status) {
-                    roleMap[step.pending_status] = step;
-                  }
-                }
-              }
-            } catch { }
-          }
-        }
-        setDynamicRoleMap(roleMap);
-      }
-    } catch { }
-  };
-
-  useEffect(() => {
-    loadData();
-    loadDynamicRoles();
-  }, []);
-
-  const getRoleForStatus = (status: string): { key: string; label: string } => {
-    const mapping: Record<string, { key: string; label: string }> = {
-      'submitted': { key: 'initial', label: '初审员' },
-      'first_reviewed': { key: 'review', label: '复审员' },
-      'second_reviewed': { key: 'final', label: '终审员' },
-      'expert_reviewed': { key: 'expert', label: '评审专家' },
-      'formal_reviewed': { key: 'formal', label: '审查员' },
-      'public_reviewed': { key: 'public', label: '公示专员' },
-    };
-
-    if (dynamicRoleMap[status]) {
-      return { key: dynamicRoleMap[status].step_key, label: dynamicRoleMap[status].role };
-    }
-    return mapping[status] || { key: status, label: status };
-  };
-
-  const groupPendingByRole = () => {
-    const groups: Record<string, { role: string; roleKey: string; items: Declaration[] }> = {};
-
-    for (const decl of pendingList) {
-      if (decl.status === 'draft' || decl.status === 'approved' || decl.status === 'rejected') continue;
-      const { key, label } = getRoleForStatus(decl.status);
-      if (!groups[key]) {
-        groups[key] = { role: label, roleKey: key, items: [] };
-      }
-      groups[key].items.push(decl);
-    }
-    return groups;
-  };
-
   const [selectedRoleKey, setSelectedRoleKey] = useState<string>('');
 
   const loadData = async () => {
@@ -129,6 +68,47 @@ function Approval() {
       message.error('加载数据失败');
     }
     setLoading(false);
+  };
+
+  useEffect(() => {
+    loadData();
+  }, []);
+
+  const getRoleInfo = (decl: Declaration): { key: string; label: string; name: string } => {
+    const role = decl.current_step_role || '审批员';
+    const name = decl.current_step_name || '审批';
+    const key = `${role}_${decl.status}`;
+    return { key, label: role, name };
+  };
+
+  const getStatusLabel = (decl: Declaration): string => {
+    if (decl.status_label) {
+      return decl.status_label;
+    }
+    const map: Record<string, string> = {
+      draft: '草稿',
+      submitted: '待初审',
+      reviewing: '初审中',
+      first_reviewed: '待复审',
+      second_reviewed: '待终审',
+      approved: '已立项',
+      rejected: '已驳回'
+    };
+    return map[decl.status] || decl.status;
+  };
+
+  const groupPendingByRole = () => {
+    const groups: Record<string, { role: string; roleKey: string; items: Declaration[] }> = {};
+
+    for (const decl of pendingList) {
+      if (decl.status === 'draft' || decl.status === 'approved' || decl.status === 'rejected') continue;
+      const { key, label } = getRoleInfo(decl);
+      if (!groups[key]) {
+        groups[key] = { role: label, roleKey: key, items: [] };
+      }
+      groups[key].items.push(decl);
+    }
+    return groups;
   };
 
   const handleViewDetail = async (record: Declaration) => {
@@ -166,7 +146,7 @@ function Approval() {
   const handleApprove = (record: Declaration) => {
     setSelectedDeclaration(record);
     form.resetFields();
-    const roleInfo = getRoleForStatus(record.status);
+    const roleInfo = getRoleInfo(record);
     form.setFieldsValue({
       approver: roleInfo.label,
       comment: ''
@@ -177,7 +157,7 @@ function Approval() {
   const handleReject = (record: Declaration) => {
     setSelectedDeclaration(record);
     form.resetFields();
-    const roleInfo = getRoleForStatus(record.status);
+    const roleInfo = getRoleInfo(record);
     form.setFieldsValue({
       approver: roleInfo.label,
       comment: ''
@@ -188,7 +168,7 @@ function Approval() {
   const handleRollback = (record: Declaration) => {
     setSelectedDeclaration(record);
     rollbackForm.resetFields();
-    const roleInfo = getRoleForStatus(record.status);
+    const roleInfo = getRoleInfo(record);
     rollbackForm.setFieldsValue({
       approver: roleInfo.label,
       comment: ''
@@ -268,23 +248,6 @@ function Approval() {
     if (['jpg', 'jpeg', 'png'].includes(ext)) return '🖼️';
     if (['zip', 'rar'].includes(ext)) return '🗜️';
     return '📎';
-  };
-
-  const getStatusLabel = (status: string): string => {
-    const roleInfo = getRoleForStatus(status);
-    if (dynamicRoleMap[status]) {
-      return `待${dynamicRoleMap[status].name}`;
-    }
-    const map: Record<string, string> = {
-      draft: '草稿',
-      submitted: '待初审',
-      reviewing: '初审中',
-      first_reviewed: '待复审',
-      second_reviewed: '待终审',
-      approved: '已立项',
-      rejected: '已驳回'
-    };
-    return map[status] || `待${roleInfo.label}审批`;
   };
 
   const AttachmentsPreviewCard = () => {
@@ -509,7 +472,7 @@ function Approval() {
     );
   };
 
-  const roleGroups = useMemo(() => groupPendingByRole(), [pendingList, dynamicRoleMap]);
+  const roleGroups = useMemo(() => groupPendingByRole(), [pendingList]);
   const roleKeys = Object.keys(roleGroups);
 
   const currentRolePending = selectedRoleKey && roleGroups[selectedRoleKey]
@@ -546,18 +509,18 @@ function Approval() {
       dataIndex: 'status',
       key: 'status',
       width: 120,
-      render: (text: string) => (
-        <Tag color={StatusColorMap[text as keyof typeof StatusColorMap] || 'blue'}>
-          {getStatusLabel(text)}
+      render: (_: string, record: Declaration) => (
+        <Tag color={StatusColorMap[record.status as keyof typeof StatusColorMap] || 'blue'}>
+          {getStatusLabel(record)}
         </Tag>
       )
     },
     {
-      title: '审批流',
+      title: '审批角色',
       key: 'workflow',
       width: 100,
       render: (_: any, record: Declaration) => {
-        const roleInfo = getRoleForStatus(record.status);
+        const roleInfo = getRoleInfo(record);
         return <Tag color="purple">{roleInfo.label}</Tag>;
       }
     },
@@ -589,7 +552,7 @@ function Approval() {
         </Space>
       )
     }
-  ], [dynamicRoleMap]);
+  ], []);
 
   const allColumns = useMemo(() => [
     {
@@ -621,9 +584,9 @@ function Approval() {
       dataIndex: 'status',
       key: 'status',
       width: 120,
-      render: (text: string) => (
-        <Tag color={StatusColorMap[text as keyof typeof StatusColorMap] || 'blue'}>
-          {getStatusLabel(text)}
+      render: (_: string, record: Declaration) => (
+        <Tag color={StatusColorMap[record.status as keyof typeof StatusColorMap] || 'blue'}>
+          {getStatusLabel(record)}
         </Tag>
       )
     },
@@ -776,7 +739,7 @@ function Approval() {
                 <p><strong>电子邮箱：</strong>{selectedDeclaration.email || '-'}</p>
                 <p><strong>当前状态：</strong>
                   <Tag color={StatusColorMap[selectedDeclaration.status as keyof typeof StatusColorMap] || 'blue'}>
-                    {getStatusLabel(selectedDeclaration.status)}
+                    {getStatusLabel(selectedDeclaration)}
                   </Tag>
                 </p>
 
@@ -825,6 +788,11 @@ function Approval() {
                               {record.action}
                             </Tag>
                             <span>{record.step_name || `步骤 ${record.step}`}</span>
+                            {record.step_role && (
+                              <Tag color="purple" style={{ marginLeft: 4 }}>
+                                {record.step_role}
+                              </Tag>
+                            )}
                             <span style={{ marginLeft: 8, color: '#999' }}>
                               {record.approver} - {dayjs(record.created_at).format('YYYY-MM-DD HH:mm')}
                             </span>
