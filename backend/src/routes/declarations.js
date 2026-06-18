@@ -829,4 +829,188 @@ router.post('/qualification-check', (req, res) => {
   }
 });
 
+router.get('/todo-kanban/summary', (req, res) => {
+  try {
+    const { role = 'all' } = req.query;
+
+    const allPending = all(`
+      SELECT d.*, g.title as guideline_title, g.deadline as guideline_deadline, wcs.name as step_name, wcs.role as step_role
+      FROM declarations d
+      LEFT JOIN guidelines g ON d.guideline_id = g.id
+      LEFT JOIN workflow_config_steps wcs 
+        ON d.workflow_config_id = wcs.config_id 
+        AND d.status = wcs.pending_status
+      WHERE d.is_deleted = 0
+        AND d.status NOT IN ('draft', 'approved', 'rejected')
+      ORDER BY d.created_at DESC
+    `);
+
+    const now = new Date();
+    const THREE_DAYS = 3 * 24 * 60 * 60 * 1000;
+    const SEVEN_DAYS = 7 * 24 * 60 * 60 * 1000;
+    const TIMEOUT_DAYS = 7;
+
+    const isTimeout = (decl) => {
+      if (!decl.created_at) return false;
+      const created = new Date(decl.created_at);
+      const diffMs = now.getTime() - created.getTime();
+      return diffMs > TIMEOUT_DAYS * 24 * 60 * 60 * 1000;
+    };
+
+    const isRoleMatch = (declRole, queryRole) => {
+      if (!queryRole || queryRole === 'all') return true;
+      if (!declRole) return false;
+      const roleMap = {
+        'chushen': ['初审员', '审查员'],
+        'fushen': ['复审员', '评审专家'],
+        'zhong': ['领导', '终审员', '公示专员', '认定委员会']
+      };
+      const allowedRoles = roleMap[queryRole] || [queryRole];
+      return allowedRoles.some(r => declRole.includes(r));
+    };
+
+    const pendingInitialReview = [];
+    const pendingReReview = [];
+    const timeoutDeclarations = [];
+
+    allPending.forEach(decl => {
+      const enriched = enrichDeclarationWorkflow(decl);
+      const stepRole = enriched.current_step_role || decl.step_role || '';
+      const stepName = enriched.current_step_name || decl.step_name || '';
+
+      const statusInitial = ['submitted'].includes(decl.status) || stepName === '初审' || stepName === '形式审查';
+      const statusRe = ['first_reviewed', 'formal_reviewed', 'expert_reviewed', 'public_reviewed', 'second_reviewed'].includes(decl.status)
+        || stepName === '复审' || stepName === '专家评审' || stepName === '公示审核' || stepName === '认定审批';
+
+      if (statusInitial && isRoleMatch(stepRole || '初审员', role)) {
+        pendingInitialReview.push({
+          ...enriched,
+          step_role: stepRole || '初审员',
+          step_name: stepName || '初审'
+        });
+      }
+
+      if (statusRe && isRoleMatch(stepRole || '复审员', role)) {
+        pendingReReview.push({
+          ...enriched,
+          step_role: stepRole || '复审员',
+          step_name: stepName || '复审'
+        });
+      }
+
+      if (isTimeout(decl) && isRoleMatch(stepRole, role)) {
+        const created = new Date(decl.created_at);
+        const diffDays = Math.floor((now.getTime() - created.getTime()) / (24 * 60 * 60 * 1000));
+        timeoutDeclarations.push({
+          ...enriched,
+          step_role: stepRole,
+          step_name: stepName,
+          timeout_days: diffDays
+        });
+      }
+    });
+
+    const upcomingDeadlines = [];
+    const guidelines = all('SELECT * FROM guidelines WHERE deadline IS NOT NULL ORDER BY deadline ASC');
+    guidelines.forEach(g => {
+      if (!g.deadline) return;
+      const deadline = new Date(g.deadline);
+      const diffMs = deadline.getTime() - now.getTime();
+      const daysRemaining = Math.ceil(diffMs / (24 * 60 * 60 * 1000));
+
+      if (daysRemaining >= -30 && daysRemaining <= 30) {
+        const relatedCount = get(
+          'SELECT COUNT(*) as count FROM declarations WHERE guideline_id = ? AND is_deleted = 0 AND status != ?',
+          [g.id, 'approved']
+        ).count;
+
+        const draftCount = get(
+          'SELECT COUNT(*) as count FROM declarations WHERE guideline_id = ? AND is_deleted = 0 AND status = ?',
+          [g.id, 'draft']
+        ).count;
+
+        upcomingDeadlines.push({
+          id: g.id,
+          title: g.title,
+          category: g.category,
+          deadline: g.deadline,
+          days_remaining: daysRemaining,
+          related_count: relatedCount,
+          draft_count: draftCount,
+          is_overdue: daysRemaining < 0,
+          is_urgent: daysRemaining >= 0 && daysRemaining <= 3
+        });
+      }
+    });
+
+    const roleOptions = [
+      { value: 'all', label: '全部角色' },
+      { value: 'chushen', label: '初审角色' },
+      { value: 'fushen', label: '复审角色' },
+      { value: 'zhong', label: '终审/领导角色' }
+    ];
+
+    const countsByRole = {};
+    roleOptions.forEach(opt => {
+      if (opt.value === 'all') {
+        countsByRole[opt.value] = {
+          pending_initial: pendingInitialReview.length,
+          pending_re: pendingReReview.length,
+          timeout: timeoutDeclarations.length,
+          upcoming: upcomingDeadlines.filter(g => !g.is_overdue && g.days_remaining <= 7).length
+        };
+      } else {
+        const initialCount = allPending.filter(d => {
+          const stepRole = enrichDeclarationWorkflow(d).current_step_role || d.step_role || '';
+          const stepName = enrichDeclarationWorkflow(d).current_step_name || d.step_name || '';
+          const statusInitial = ['submitted'].includes(d.status) || stepName === '初审' || stepName === '形式审查';
+          return statusInitial && isRoleMatch(stepRole || '初审员', opt.value);
+        }).length;
+        const reCount = allPending.filter(d => {
+          const stepRole = enrichDeclarationWorkflow(d).current_step_role || d.step_role || '';
+          const stepName = enrichDeclarationWorkflow(d).current_step_name || d.step_name || '';
+          const statusRe = ['first_reviewed', 'formal_reviewed', 'expert_reviewed', 'public_reviewed', 'second_reviewed'].includes(d.status)
+            || stepName === '复审' || stepName === '专家评审' || stepName === '公示审核' || stepName === '认定审批';
+          return statusRe && isRoleMatch(stepRole || '复审员', opt.value);
+        }).length;
+        const timeoutCount = allPending.filter(d => isTimeout(d) && isRoleMatch(
+          enrichDeclarationWorkflow(d).current_step_role || d.step_role || '', opt.value
+        )).length;
+        countsByRole[opt.value] = {
+          pending_initial: initialCount,
+          pending_re: reCount,
+          timeout: timeoutCount,
+          upcoming: upcomingDeadlines.filter(g => !g.is_overdue && g.days_remaining <= 7).length
+        };
+      }
+    });
+
+    const filtered = (list, queryRole) => {
+      if (queryRole === 'all') return list;
+      return list.filter(item => isRoleMatch(item.step_role, queryRole));
+    };
+
+    const filteredDeadlines = upcomingDeadlines;
+
+    res.json({
+      success: true,
+      data: {
+        current_role: role,
+        role_options: roleOptions,
+        counts_by_role: countsByRole,
+        pending_initial_review: filtered(pendingInitialReview, role).slice(0, 10),
+        pending_initial_review_count: filtered(pendingInitialReview, role).length,
+        pending_re_review: filtered(pendingReReview, role).slice(0, 10),
+        pending_re_review_count: filtered(pendingReReview, role).length,
+        timeout_declarations: filtered(timeoutDeclarations, role).slice(0, 10),
+        timeout_declarations_count: filtered(timeoutDeclarations, role).length,
+        upcoming_deadlines: filteredDeadlines.slice(0, 10),
+        upcoming_deadlines_count: filteredDeadlines.length
+      }
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
 module.exports = router;

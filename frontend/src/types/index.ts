@@ -421,3 +421,47 @@ export interface QualificationCheckResult {
     days_remaining?: number;
   };
 }
+
+export interface TodoKanbanRoleOption {
+  value: string;
+  label: string;
+}
+
+export interface TodoKanbanRoleCounts {
+  pending_initial: number;
+  pending_re: number;
+  timeout: number;
+  upcoming: number;
+}
+
+export interface TodoKanbanDeclaration extends Declaration {
+  step_role?: string;
+  step_name?: string;
+  timeout_days?: number;
+}
+
+export interface TodoKanbanDeadline {
+  id: number;
+  title: string;
+  category: string;
+  deadline: string;
+  days_remaining: number;
+  related_count: number;
+  draft_count: number;
+  is_overdue: boolean;
+  is_urgent: boolean;
+}
+
+export interface TodoKanbanSummary {
+  current_role: string;
+  role_options: TodoKanbanRoleOption[];
+  counts_by_role: Record<string, TodoKanbanRoleCounts>;
+  pending_initial_review: TodoKanbanDeclaration[];
+  pending_initial_review_count: number;
+  pending_re_review: TodoKanbanDeclaration[];
+  pending_re_review_count: number;
+  timeout_declarations: TodoKanbanDeclaration[];
+  timeout_declarations_count: number;
+  upcoming_deadlines: TodoKanbanDeadline[];
+  upcoming_deadlines_count: number;
+}

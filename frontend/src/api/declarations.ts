@@ -1,5 +1,11 @@
 import api from './request';
-import type { Declaration, ApiResponse, DeclarationStats, QualificationCheckResult } from '../types';
+import type {
+  Declaration,
+  ApiResponse,
+  DeclarationStats,
+  QualificationCheckResult,
+  TodoKanbanSummary
+} from '../types';
 
 export const getDeclarations = (params?: {
   status?: string;
@@ -67,4 +73,8 @@ export const checkQualification = (data: {
     '/declarations/qualification-check',
     data
   );
+};
+
+export const getTodoKanbanSummary = (params?: { role?: string }) => {
+  return api.get<any, ApiResponse<TodoKanbanSummary>>('/declarations/todo-kanban/summary', { params });
 };
