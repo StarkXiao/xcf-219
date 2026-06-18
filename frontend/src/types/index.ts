@@ -191,15 +191,96 @@ export interface OperationTimelineEvent {
   event_type: 'version' | 'workflow' | 'declaration';
 }
 
+export interface MaterialType {
+  id: number;
+  guideline_id: number | null;
+  name: string;
+  code: string;
+  description: string;
+  required: boolean;
+  allowed_extensions: string[];
+  max_size: number;
+  sort_order: number;
+  created_at: string;
+  uploaded?: number;
+  attachments?: Attachment[];
+}
+
 export interface Attachment {
   id: number;
   declaration_id: number;
+  material_type_id: number | null;
+  material_type_name?: string | null;
+  material_type_code?: string | null;
+  material_type_required?: boolean;
   filename: string;
   original_name: string;
   file_path: string;
   file_size: number;
   file_type: string;
+  file_hash?: string | null;
   uploaded_at: string;
+}
+
+export interface ValidationFileResult {
+  name: string;
+  size: number;
+  valid: boolean;
+  errors: string[];
+  warnings: string[];
+  material_type_id: number | null;
+  material_type_name: string | null;
+}
+
+export interface ValidationResult {
+  valid: boolean;
+  results: ValidationFileResult[];
+}
+
+export interface UploadResultData {
+  attachments: Attachment[];
+  warnings: string[];
+  duplicates: {
+    new_file: string;
+    existing_file: string;
+    existing_id: number;
+    material_type_name: string | null;
+  }[];
+  uploadedCount: number;
+  duplicateCount: number;
+}
+
+export interface MissingCheckStats {
+  total_types: number;
+  required_total: number;
+  required_complete: number;
+  required_missing: number;
+  optional_total: number;
+  optional_complete: number;
+  attachments_total: number;
+  uncategorized_count: number;
+  completion_rate: number;
+  is_complete: boolean;
+}
+
+export interface MissingCheckResult {
+  missing: MaterialType[];
+  complete: MaterialType[];
+  unnecessary: MaterialType[];
+  uncategorized: Attachment[];
+  stats: MissingCheckStats;
+}
+
+export interface DuplicateGroup {
+  groups: Attachment[][];
+  group_count: number;
+  duplicate_count: number;
+}
+
+export interface DuplicatesResult {
+  total_attachments: number;
+  exact_duplicates: DuplicateGroup;
+  potential_duplicates: DuplicateGroup;
 }
 
 export interface ApprovalRecord {

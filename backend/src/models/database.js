@@ -89,17 +89,37 @@ function initDatabase() {
     CREATE INDEX IF NOT EXISTS idx_declaration_versions_version 
       ON declaration_versions(declaration_id, version_number DESC);
 
+    CREATE TABLE IF NOT EXISTS material_types (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      guideline_id INTEGER,
+      name TEXT NOT NULL,
+      code TEXT NOT NULL,
+      description TEXT,
+      required INTEGER DEFAULT 0,
+      allowed_extensions TEXT,
+      max_size INTEGER DEFAULT 10485760,
+      sort_order INTEGER DEFAULT 0,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (guideline_id) REFERENCES guidelines(id)
+    );
+
     CREATE TABLE IF NOT EXISTS attachments (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       declaration_id INTEGER NOT NULL,
+      material_type_id INTEGER,
       filename TEXT NOT NULL,
       original_name TEXT NOT NULL,
       file_path TEXT NOT NULL,
       file_size INTEGER,
       file_type TEXT,
+      file_hash TEXT,
       uploaded_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY (declaration_id) REFERENCES declarations(id)
+      FOREIGN KEY (declaration_id) REFERENCES declarations(id),
+      FOREIGN KEY (material_type_id) REFERENCES material_types(id)
     );
+
+    CREATE INDEX IF NOT EXISTS idx_attachments_hash ON attachments(file_hash);
+    CREATE INDEX IF NOT EXISTS idx_material_types_guideline ON material_types(guideline_id);
 
     CREATE TABLE IF NOT EXISTS approval_records (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -179,6 +199,24 @@ function initDatabase() {
     insertStep.run('终审', '领导审批', 3, '领导');
     insertStep.run('已立项', '审批通过', 4, '系统');
     insertStep.run('已驳回', '审批不通过', 5, '系统');
+  }
+
+  const materialTypeCount = get('SELECT COUNT(*) as count FROM material_types');
+  if (materialTypeCount.count === 0) {
+    const insertMaterialType = db.prepare(`
+      INSERT INTO material_types (guideline_id, name, code, description, required, allowed_extensions, max_size, sort_order)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+
+    insertMaterialType.run(null, '企业营业执照', 'business_license', '企业营业执照复印件，需加盖公章', 1, 'pdf,jpg,jpeg,png', 10485760, 1);
+    insertMaterialType.run(null, '法人身份证', 'legal_id_card', '法定代表人身份证正反面', 1, 'pdf,jpg,jpeg,png', 10485760, 2);
+    insertMaterialType.run(null, '组织机构代码证', 'org_code_cert', '组织机构代码证复印件', 0, 'pdf,jpg,jpeg,png', 10485760, 3);
+    insertMaterialType.run(null, '税务登记证', 'tax_reg_cert', '税务登记证复印件', 0, 'pdf,jpg,jpeg,png', 10485760, 4);
+    insertMaterialType.run(null, '项目申请书', 'project_application', '项目申请书Word文档', 1, 'doc,docx,pdf', 20971520, 5);
+    insertMaterialType.run(null, '财务报表', 'financial_statement', '近三年财务报表', 0, 'xls,xlsx,pdf', 20971520, 6);
+    insertMaterialType.run(null, '知识产权证明', 'ip_cert', '专利证书、软件著作权等', 0, 'pdf,jpg,jpeg,png', 20971520, 7);
+    insertMaterialType.run(null, '荣誉资质', 'honor_qualification', '企业荣誉证书、资质证书等', 0, 'pdf,jpg,jpeg,png,zip,rar', 52428800, 8);
+    insertMaterialType.run(null, '其他材料', 'other_materials', '其他需要补充的证明材料', 0, 'pdf,doc,docx,xls,xlsx,jpg,jpeg,png,zip,rar', 52428800, 99);
   }
 
   console.log('数据库初始化完成');
