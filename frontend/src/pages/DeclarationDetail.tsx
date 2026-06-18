@@ -88,19 +88,54 @@ function DeclarationDetail() {
     return (bytes / (1024 * 1024)).toFixed(2) + ' MB';
   };
 
+  const getStatusLabel = (status: string | undefined) => {
+    if (!status) return '-';
+    if (StatusMap[status as keyof typeof StatusMap]) {
+      return StatusMap[status as keyof typeof StatusMap];
+    }
+    if (workflowInfo) {
+      const step = workflowInfo.steps.find(s => s.pending_status === status || s.approved_status === status);
+      if (step) {
+        if (step.pending_status === status) return `待${step.name}`;
+        if (step.approved_status === status) return `${step.name}通过`;
+      }
+    }
+    return status;
+  };
+
+  const getStatusColor = (status: string | undefined) => {
+    if (!status) return 'default';
+    if (StatusColorMap[status as keyof typeof StatusColorMap]) {
+      return StatusColorMap[status as keyof typeof StatusColorMap];
+    }
+    if (status === 'approved') return 'green';
+    if (status === 'rejected') return 'red';
+    if (status === 'draft') return 'default';
+    if (workflowInfo) {
+      const pendingStep = workflowInfo.steps.find(s => s.pending_status === status);
+      if (pendingStep) return 'blue';
+      const approvedStep = workflowInfo.steps.find(s => s.approved_status === status);
+      if (approvedStep) return 'purple';
+    }
+    return 'default';
+  };
+
   const canApprove = () => {
-    if (!declaration) return false;
-    return ['submitted', 'first_reviewed', 'second_reviewed'].includes(declaration.status);
+    if (!declaration || !workflowInfo) return false;
+    if (['draft', 'approved', 'rejected'].includes(declaration.status)) return false;
+    return !!workflowInfo.current_step;
   };
 
   const canReject = () => {
-    if (!declaration) return false;
-    return ['submitted', 'first_reviewed', 'second_reviewed'].includes(declaration.status);
+    if (!declaration || !workflowInfo) return false;
+    if (['draft', 'approved', 'rejected'].includes(declaration.status)) return false;
+    return !!workflowInfo.current_step;
   };
 
   const canRollback = () => {
-    if (!declaration) return false;
-    return ['submitted', 'first_reviewed', 'second_reviewed'].includes(declaration.status);
+    if (!declaration || !workflowInfo) return false;
+    if (['draft', 'approved', 'rejected'].includes(declaration.status)) return false;
+    return !!workflowInfo.current_step && workflowInfo.current_step.allow_rollback !== false;
   };
 
   const handleApprove = async () => {
@@ -222,15 +257,21 @@ function DeclarationDetail() {
       { title: '草稿', description: '申请人编辑', icon: <EditOutlined /> }
     ];
 
+    const currentStatus = declaration?.status || '';
+    const currentStatusIsApproved = workflowInfo.steps.some(s => s.approved_status === currentStatus);
+    const currentStepIndex = workflowInfo.steps.findIndex(s => s.pending_status === currentStatus);
+    const approvedStepIndex = workflowInfo.steps.findIndex(s => s.approved_status === currentStatus);
+
     workflowInfo.steps.forEach((step, index) => {
-      const isCurrent = declaration?.status === step.pending_status;
-      const isCompleted = workflowInfo.steps.some((s, i) =>
-        i < index && declaration?.status === s.approved_status
-      ) || (declaration?.status === 'approved' && index < workflowInfo.steps.length);
+      const isCurrent = currentStatus === step.pending_status;
+      const isCompleted = 
+        (approvedStepIndex >= 0 && index <= approvedStepIndex) ||
+        (currentStepIndex >= 0 && index < currentStepIndex) ||
+        currentStatus === 'approved';
 
       let stepIcon = <ClockCircleOutlined />;
       if (isCurrent) stepIcon = <SyncOutlined />;
-      else if (isCompleted || (declaration?.status === 'approved')) stepIcon = <CheckCircleOutlined />;
+      else if (isCompleted) stepIcon = <CheckCircleOutlined />;
 
       if (declaration?.status === 'rejected') {
         stepIcon = <CloseCircleOutlined />;
@@ -259,11 +300,14 @@ function DeclarationDetail() {
     if (declaration.status === 'draft') return 0;
     if (declaration.status === 'approved') return workflowInfo.steps.length + 1;
     if (declaration.status === 'rejected') {
-      const idx = workflowInfo.steps.findIndex(s => s.pending_status === declaration.status);
+      const idx = workflowInfo.steps.findIndex(s => s.pending_status === declaration.status || s.approved_status === declaration.status);
       return idx >= 0 ? idx + 1 : 1;
     }
-    const idx = workflowInfo.steps.findIndex(s => s.pending_status === declaration.status);
-    return idx >= 0 ? idx + 1 : 0;
+    const pendingIdx = workflowInfo.steps.findIndex(s => s.pending_status === declaration.status);
+    if (pendingIdx >= 0) return pendingIdx + 1;
+    const approvedIdx = workflowInfo.steps.findIndex(s => s.approved_status === declaration.status);
+    if (approvedIdx >= 0) return approvedIdx + 2;
+    return 0;
   };
 
   const getStatusStepStatus = () => {
@@ -326,13 +370,15 @@ function DeclarationDetail() {
             icon={<DownloadOutlined />}
             onClick={() => window.open(downloadAttachment(record.id))}
           />
-          <Button
-            type="link"
-            size="small"
-            danger
-            icon={<DeleteOutlined />}
-            onClick={() => handleDeleteAttachment(record.id)}
-          />
+          {declaration?.status === 'draft' && (
+            <Button
+              type="link"
+              size="small"
+              danger
+              icon={<DeleteOutlined />}
+              onClick={() => handleDeleteAttachment(record.id)}
+            />
+          )}
         </Space>
       )
     }
@@ -415,7 +461,7 @@ function DeclarationDetail() {
           <div style={{ flex: 1 }}>
             <div style={{ fontSize: 13, color: '#666' }}>完整率</div>
             <div style={{ fontSize: 18, fontWeight: 600, color: stats.is_complete ? '#52c41a' : '#faad14' }}>
-              {(stats.completion_rate * 100).toFixed(0)}%
+              {stats.completion_rate}%
             </div>
           </div>
         </div>
@@ -455,8 +501,8 @@ function DeclarationDetail() {
           <Descriptions.Item label="联系电话">{declaration?.phone || '-'}</Descriptions.Item>
           <Descriptions.Item label="电子邮箱">{declaration?.email || '-'}</Descriptions.Item>
           <Descriptions.Item label="当前状态">
-            <Tag color={StatusColorMap[declaration?.status as keyof typeof StatusColorMap] || 'default'}>
-              {StatusMap[declaration?.status || 'draft']}
+            <Tag color={getStatusColor(declaration?.status)}>
+              {getStatusLabel(declaration?.status)}
             </Tag>
           </Descriptions.Item>
           <Descriptions.Item label="当前步骤">
@@ -656,8 +702,8 @@ function DeclarationDetail() {
           <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
             <Button icon={<ArrowLeftOutlined />} onClick={() => navigate('/declarations')} />
             <h2 className="page-title" style={{ margin: 0 }}>申报详情</h2>
-            <Tag color={StatusColorMap[declaration?.status as keyof typeof StatusColorMap] || 'default'}>
-              {StatusMap[declaration?.status || 'draft']}
+            <Tag color={getStatusColor(declaration?.status)}>
+              {getStatusLabel(declaration?.status)}
             </Tag>
             {workflowInfo?.current_step && (
               <Tooltip title={`当前步骤: ${workflowInfo.current_step.name} | 角色: ${workflowInfo.current_step.role}`}>
