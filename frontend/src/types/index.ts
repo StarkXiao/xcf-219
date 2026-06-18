@@ -8,6 +8,59 @@ export interface Guideline {
   updated_at: string;
 }
 
+export interface DeclarationTemplate {
+  id: number;
+  guideline_id: number;
+  title: string;
+  content: string;
+  description: string;
+  sort_order: number;
+  is_default: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Faq {
+  id: number;
+  guideline_id: number;
+  question: string;
+  answer: string;
+  sort_order: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface HistoryCase {
+  id: number;
+  title: string;
+  applicant: string;
+  company: string;
+  content: string;
+  status: string;
+  created_at: string;
+  updated_at?: string;
+  attachment_count?: number;
+  approval_count?: number;
+}
+
+export interface GuidelineStats {
+  total_declarations: number;
+  approved_count: number;
+  pending_count: number;
+  template_count: number;
+  faq_count: number;
+  approval_rate: number;
+}
+
+export interface GuidelineRelated {
+  guideline: Guideline;
+  templates: DeclarationTemplate[];
+  materials: MaterialType[];
+  history_cases: HistoryCase[];
+  faqs: Faq[];
+  stats: GuidelineStats;
+}
+
 export interface Declaration {
   id: number;
   title: string;

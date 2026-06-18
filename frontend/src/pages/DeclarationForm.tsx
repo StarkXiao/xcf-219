@@ -11,8 +11,8 @@ import {
   WarningOutlined, CheckCircleOutlined, InfoCircleOutlined, FileTextOutlined,
   BankOutlined, ScheduleOutlined
 } from '@ant-design/icons';
-import { useNavigate, useParams } from 'react-router-dom';
-import { getGuidelines } from '../api/guidelines';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { getGuidelines, getGuidelineTemplates } from '../api/guidelines';
 import { getDeclaration, createDeclaration, updateDeclaration, submitDeclaration, checkQualification } from '../api/declarations';
 import { getAttachments, uploadAttachments, deleteAttachment, downloadAttachment } from '../api/attachments';
 import {
@@ -42,6 +42,7 @@ const SAVE_TYPE_STYLE: Record<string, { color: string; bg: string }> = {
 function DeclarationForm() {
   const navigate = useNavigate();
   const { id } = useParams<{ id: string }>();
+  const [searchParams] = useSearchParams();
   const isEdit = !!id;
   const [form] = Form.useForm();
   
@@ -274,7 +275,52 @@ function DeclarationForm() {
   const loadGuidelines = async () => {
     try {
       const res = await getGuidelines();
-      if (res.success) setGuidelines(res.data || []);
+      if (res.success) {
+        const guidelineList = res.data || [];
+        setGuidelines(guidelineList);
+
+        if (!isEdit) {
+          const paramGuidelineId = searchParams.get('guideline_id');
+          const paramTemplateId = searchParams.get('template_id');
+          const presetTitle = searchParams.get('title');
+          const presetContent = searchParams.get('content');
+
+          const presetValues: any = {};
+
+          if (paramGuidelineId) {
+            const gid = parseInt(paramGuidelineId);
+            presetValues.guideline_id = gid;
+            const matchedGuideline = guidelineList.find(g => g.id === gid);
+            if (matchedGuideline && !presetTitle) {
+              presetValues.title = `${matchedGuideline.title} - 申报`;
+            }
+
+            if (paramTemplateId) {
+              try {
+                const tplRes = await getGuidelineTemplates(gid);
+                if (tplRes.success && tplRes.data) {
+                  const template = tplRes.data.find(t => t.id === parseInt(paramTemplateId!)) 
+                    || tplRes.data.find(t => t.is_default === 1) 
+                    || tplRes.data[0];
+                  if (template && !presetContent) {
+                    presetValues.content = template.content;
+                  }
+                }
+              } catch (e) {
+                console.error('加载模板失败:', e);
+              }
+            }
+          }
+
+          if (presetTitle) presetValues.title = presetTitle;
+          if (presetContent) presetValues.content = presetContent;
+
+          if (Object.keys(presetValues).length > 0) {
+            form.setFieldsValue(presetValues);
+            lastFormValuesRef.current = { ...presetValues };
+          }
+        }
+      }
     } catch (error) {
       console.error('加载申报指南失败:', error);
     }

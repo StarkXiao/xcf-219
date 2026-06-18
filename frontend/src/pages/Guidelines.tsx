@@ -1,14 +1,38 @@
 import { useEffect, useState } from 'react';
-import { Table, Button, Space, Input, Select, Modal, Form, DatePicker, message, Tag, Card, Tabs, Switch, Checkbox, Tooltip, Popconfirm } from 'antd';
-import { PlusOutlined, SearchOutlined, EditOutlined, DeleteOutlined, EyeOutlined, SettingOutlined, MinusCircleOutlined, ArrowUpOutlined, ArrowDownOutlined } from '@ant-design/icons';
+import {
+  Table, Button, Space, Input, Select, Modal, Form, DatePicker, message, Tag, Card, Tabs, Switch,
+  Checkbox, Tooltip, Popconfirm, Empty, Collapse, List, Descriptions, Row, Col, Statistic,
+  Divider, Alert, Avatar, Badge, Steps, Typography, Spin
+} from 'antd';
+import {
+  PlusOutlined, SearchOutlined, EditOutlined, DeleteOutlined, EyeOutlined, SettingOutlined,
+  MinusCircleOutlined, ArrowUpOutlined, ArrowDownOutlined, FormOutlined, FileTextOutlined,
+  PaperClipOutlined, CheckCircleOutlined, QuestionCircleOutlined, HistoryOutlined,
+  CopyOutlined, RocketOutlined, TeamOutlined, ThunderboltOutlined, InfoCircleOutlined,
+  FileSearchOutlined, BulbOutlined
+} from '@ant-design/icons';
 import dayjs from 'dayjs';
-import { getGuidelines, createGuideline, updateGuideline, deleteGuideline } from '../api/guidelines';
-import { getWorkflowConfigByGuideline, createWorkflowConfig, updateWorkflowConfig, deleteWorkflowConfig, getWorkflowRoles } from '../api/workflow';
-import type { Guideline, WorkflowConfig, WorkflowConfigStep, WorkflowRoleOption } from '../types';
+import { useNavigate } from 'react-router-dom';
+import {
+  getGuidelines, createGuideline, updateGuideline, deleteGuideline,
+  getGuidelineRelated, createGuidelineTemplate, updateGuidelineTemplate,
+  deleteGuidelineTemplate, createGuidelineFaq, updateGuidelineFaq,
+  deleteGuidelineFaq, getGuidelineTemplates, getGuidelineFaqs
+} from '../api/guidelines';
+import {
+  getWorkflowConfigByGuideline, createWorkflowConfig, updateWorkflowConfig,
+  deleteWorkflowConfig, getWorkflowRoles
+} from '../api/workflow';
+import type {
+  Guideline, WorkflowConfig, WorkflowConfigStep, WorkflowRoleOption,
+  GuidelineRelated, DeclarationTemplate, Faq, MaterialType, HistoryCase
+} from '../types';
 
 const { TextArea } = Input;
 const { Option } = Select;
 const { TabPane } = Tabs;
+const { Text, Title, Paragraph } = Typography;
+const { Panel } = Collapse;
 
 function generateStepKey(name: string, order: number): string {
   const pinyin: Record<string, string> = {
@@ -22,6 +46,7 @@ function generateStepKey(name: string, order: number): string {
 }
 
 function Guidelines() {
+  const navigate = useNavigate();
   const [guidelines, setGuidelines] = useState<Guideline[]>([]);
   const [loading, setLoading] = useState(false);
   const [modalVisible, setModalVisible] = useState(false);
@@ -39,6 +64,18 @@ function Guidelines() {
   const [workflowDescription, setWorkflowDescription] = useState('');
   const [roleOptions, setRoleOptions] = useState<WorkflowRoleOption[]>([]);
   const [workflowSaving, setWorkflowSaving] = useState(false);
+
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [relatedData, setRelatedData] = useState<GuidelineRelated | null>(null);
+  const [detailTab, setDetailTab] = useState('content');
+
+  const [templateModalVisible, setTemplateModalVisible] = useState(false);
+  const [editingTemplate, setEditingTemplate] = useState<DeclarationTemplate | null>(null);
+  const [templateForm] = Form.useForm();
+
+  const [faqModalVisible, setFaqModalVisible] = useState(false);
+  const [editingFaq, setEditingFaq] = useState<Faq | null>(null);
+  const [faqForm] = Form.useForm();
 
   useEffect(() => {
     loadGuidelines();
@@ -94,15 +131,26 @@ function Guidelines() {
     setModalVisible(true);
   };
 
-  const handleDetail = (record: Guideline) => {
+  const handleDetail = async (record: Guideline) => {
     setCurrentGuideline(record);
+    setDetailLoading(true);
+    setDetailTab('content');
     setDetailVisible(true);
+    try {
+      const res = await getGuidelineRelated(record.id);
+      if (res.success && res.data) {
+        setRelatedData(res.data);
+      }
+    } catch (error) {
+      message.error('加载关联信息失败');
+    }
+    setDetailLoading(false);
   };
 
   const handleDelete = (record: Guideline) => {
     Modal.confirm({
       title: '确认删除',
-      content: `确定要删除"${record.title}"吗？关联的工作流配置也会被删除。`,
+      content: `确定要删除"${record.title}"吗？关联的工作流配置、模板、FAQ也会被删除。`,
       onOk: async () => {
         try {
           const res = await deleteGuideline(record.id);
@@ -140,6 +188,150 @@ function Guidelines() {
     } catch (error) {
       message.error(currentGuideline ? '更新失败' : '创建失败');
     }
+  };
+
+  const handleStartDeclaration = (guideline: Guideline, templateId?: number) => {
+    const params = new URLSearchParams();
+    params.append('guideline_id', String(guideline.id));
+    if (templateId) {
+      params.append('template_id', String(templateId));
+    }
+    navigate(`/declarations/new?${params.toString()}`);
+  };
+
+  const handleUseTemplate = (template: DeclarationTemplate) => {
+    if (currentGuideline) {
+      handleStartDeclaration(currentGuideline, template.id);
+      setDetailVisible(false);
+    }
+  };
+
+  const handleCopyTemplateContent = (content: string) => {
+    navigator.clipboard.writeText(content).then(() => {
+      message.success('模板内容已复制到剪贴板');
+    }).catch(() => {
+      message.error('复制失败');
+    });
+  };
+
+  const handleViewCase = (caseItem: HistoryCase) => {
+    navigate(`/declarations/${caseItem.id}`);
+  };
+
+  const handleAddTemplate = () => {
+    setEditingTemplate(null);
+    templateForm.resetFields();
+    templateForm.setFieldsValue({ sort_order: 0, is_default: 0 });
+    setTemplateModalVisible(true);
+  };
+
+  const handleEditTemplate = (tpl: DeclarationTemplate) => {
+    setEditingTemplate(tpl);
+    templateForm.setFieldsValue(tpl);
+    setTemplateModalVisible(true);
+  };
+
+  const handleSaveTemplate = async () => {
+    if (!currentGuideline) return;
+    try {
+      const values = await templateForm.validateFields();
+      let res;
+      if (editingTemplate) {
+        res = await updateGuidelineTemplate(editingTemplate.id, values);
+      } else {
+        res = await createGuidelineTemplate(currentGuideline.id, values);
+      }
+      if (res.success) {
+        message.success(editingTemplate ? '模板更新成功' : '模板创建成功');
+        setTemplateModalVisible(false);
+        const detailRes = await getGuidelineRelated(currentGuideline.id);
+        if (detailRes.success && detailRes.data) {
+          setRelatedData(detailRes.data);
+        }
+      }
+    } catch (error) {
+      message.error('保存模板失败');
+    }
+  };
+
+  const handleDeleteTemplate = (tpl: DeclarationTemplate) => {
+    if (!currentGuideline) return;
+    Modal.confirm({
+      title: '确认删除',
+      content: `确定要删除模板"${tpl.title}"吗？`,
+      onOk: async () => {
+        try {
+          const res = await deleteGuidelineTemplate(tpl.id);
+          if (res.success) {
+            message.success('删除成功');
+            const detailRes = await getGuidelineRelated(currentGuideline.id);
+            if (detailRes.success && detailRes.data) {
+              setRelatedData(detailRes.data);
+            }
+          }
+        } catch (error) {
+          message.error('删除失败');
+        }
+      }
+    });
+  };
+
+  const handleAddFaq = () => {
+    setEditingFaq(null);
+    faqForm.resetFields();
+    faqForm.setFieldsValue({ sort_order: 0 });
+    setFaqModalVisible(true);
+  };
+
+  const handleEditFaq = (faq: Faq) => {
+    setEditingFaq(faq);
+    faqForm.setFieldsValue(faq);
+    setFaqModalVisible(true);
+  };
+
+  const handleSaveFaq = async () => {
+    if (!currentGuideline) return;
+    try {
+      const values = await faqForm.validateFields();
+      let res;
+      if (editingFaq) {
+        res = await updateGuidelineFaq(editingFaq.id, values);
+      } else {
+        res = await createGuidelineFaq(currentGuideline.id, values);
+      }
+      if (res.success) {
+        message.success(editingFaq ? 'FAQ更新成功' : 'FAQ创建成功');
+        setFaqModalVisible(false);
+        const detailRes = await getGuidelineRelated(currentGuideline.id);
+        if (detailRes.success && detailRes.data) {
+          setRelatedData(detailRes.data);
+        }
+      }
+    } catch (error) {
+      message.error('保存FAQ失败');
+    }
+  };
+
+  const handleDeleteFaq = (faq: Faq) => {
+    if (!currentGuideline) return;
+    Modal.confirm({
+      title: '确认删除',
+      content: `确定要删除问题"${faq.question}"吗？`,
+      onOk: async () => {
+        try {
+          const res = await deleteGuidelineFaq(faq.id);
+          if (res.success) {
+            message.success('删除成功');
+            const detailRes = await getGuidelineRelated(currentGuideline.id);
+            if (detailRes.success && detailRes.data) {
+              setRelatedData(detailRes.data);
+            }
+          }
+        } catch (error) {
+          message.error('删除失败');
+        }
+      }
+    });
   };
 
   const handleWorkflowConfig = async (record: Guideline) => {
@@ -334,6 +526,372 @@ function Guidelines() {
     }
   };
 
+  const renderStats = () => {
+    if (!relatedData) return null;
+    const { stats } = relatedData;
+    return (
+      <Row gutter={16} style={{ marginBottom: 16 }}>
+        <Col span={6}>
+          <Statistic
+            title="申报总数"
+            value={stats.total_declarations}
+            prefix={<FileTextOutlined style={{ color: '#1890ff' }} />}
+          />
+        </Col>
+        <Col span={6}>
+          <Statistic
+            title="已立项"
+            value={stats.approved_count}
+            valueStyle={{ color: '#52c41a' }}
+            prefix={<CheckCircleOutlined />}
+          />
+        </Col>
+        <Col span={6}>
+          <Statistic
+            title="立项通过率"
+            value={stats.approval_rate}
+            suffix="%"
+            valueStyle={{ color: stats.approval_rate >= 60 ? '#52c41a' : '#faad14' }}
+            prefix={<ThunderboltOutlined />}
+          />
+        </Col>
+        <Col span={6}>
+          <Statistic
+            title="进行中"
+            value={stats.pending_count}
+            valueStyle={{ color: '#1890ff' }}
+            prefix={<TeamOutlined />}
+          />
+        </Col>
+      </Row>
+    );
+  };
+
+  const renderContentTab = () => {
+    if (!relatedData) return null;
+    const { guideline } = relatedData;
+    return (
+      <div>
+        {renderStats()}
+        <Card
+          bordered={false}
+          style={{ background: '#fafafa' }}
+          title={
+            <Space>
+              <Tag color="blue">{guideline.category}</Tag>
+              <Text type="secondary">
+                截止日期: {guideline.deadline || '长期有效'}
+                {guideline.deadline && dayjs(guideline.deadline).isBefore(dayjs()) && (
+                  <Tag color="red" style={{ marginLeft: 8 }}>已截止</Tag>
+                )}
+                {guideline.deadline && dayjs(guideline.deadline).diff(dayjs(), 'day') <= 7 && dayjs(guideline.deadline).isAfter(dayjs()) && (
+                  <Tag color="orange" style={{ marginLeft: 8 }}>即将截止</Tag>
+                )}
+              </Text>
+            </Space>
+          }
+          extra={
+            <Button
+              type="primary"
+              icon={<RocketOutlined />}
+              onClick={() => handleStartDeclaration(guideline)}
+            >
+              立即申报
+            </Button>
+          }
+        >
+          <div style={{ whiteSpace: 'pre-wrap', lineHeight: 1.8 }}>
+            {guideline.content}
+          </div>
+        </Card>
+
+        <Divider orientation="left" plain>
+          <Space>
+            <BulbOutlined style={{ color: '#faad14' }} />
+            <Text strong>申报小贴士</Text>
+          </Space>
+        </Divider>
+        <Alert
+          type="info"
+          showIcon
+          icon={<InfoCircleOutlined />}
+          message="快速开始申报"
+          description={
+            <div>
+              <Paragraph style={{ marginBottom: 8 }}>
+                1. 查看左侧「申报模板」标签，选择合适的模板一键开始申报
+              </Paragraph>
+              <Paragraph style={{ marginBottom: 8 }}>
+                2. 查看「材料清单」标签，提前准备好所需材料
+              </Paragraph>
+              <Paragraph style={{ marginBottom: 8 }}>
+                3. 参考「历史案例」标签，了解以往成功申报的经验
+              </Paragraph>
+              <Paragraph style={{ marginBottom: 0 }}>
+                4. 如有疑问，查看「常见问题」标签获取解答
+              </Paragraph>
+            </div>
+          }
+        />
+      </div>
+    );
+  };
+
+  const renderTemplatesTab = () => {
+    if (!relatedData) return null;
+    const { templates } = relatedData;
+    return (
+      <div>
+        <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'space-between' }}>
+          <Text type="secondary">共 {templates.length} 个模板</Text>
+          <Button type="primary" icon={<PlusOutlined />} onClick={handleAddTemplate}>
+            新增模板
+          </Button>
+        </div>
+        {templates.length === 0 ? (
+          <Empty description="暂无申报模板" />
+        ) : (
+          <List
+            grid={{ gutter: 16, xs: 1, sm: 1, md: 2, lg: 2, xl: 2, xxl: 2 }}
+            dataSource={templates}
+            renderItem={(tpl) => (
+              <List.Item>
+                <Card
+                  hoverable
+                  title={
+                    <Space>
+                      {tpl.is_default === 1 && <Tag color="gold">默认</Tag>}
+                      <Text strong>{tpl.title}</Text>
+                    </Space>
+                  }
+                  extra={
+                    <Space>
+                      <Tooltip title="使用此模板申报">
+                        <Button
+                          type="primary"
+                          size="small"
+                          icon={<FormOutlined />}
+                          onClick={() => handleUseTemplate(tpl)}
+                        >
+                          立即使用
+                        </Button>
+                      </Tooltip>
+                      <Tooltip title="复制内容">
+                        <Button
+                          size="small"
+                          icon={<CopyOutlined />}
+                          onClick={() => handleCopyTemplateContent(tpl.content)}
+                        />
+                      </Tooltip>
+                      <Tooltip title="编辑">
+                        <Button size="small" icon={<EditOutlined />} onClick={() => handleEditTemplate(tpl)} />
+                      </Tooltip>
+                      <Popconfirm title="确定删除此模板？" onConfirm={() => handleDeleteTemplate(tpl)}>
+                        <Button size="small" danger icon={<DeleteOutlined />} />
+                      </Popconfirm>
+                    </Space>
+                  }
+                  style={{ height: '100%' }}
+                >
+                  <Paragraph type="secondary" style={{ marginBottom: 8 }}>
+                    {tpl.description || '暂无描述'}
+                  </Paragraph>
+                  <div
+                    style={{
+                      maxHeight: 120,
+                      overflow: 'hidden',
+                      background: '#f5f5f5',
+                      padding: 8,
+                      borderRadius: 4,
+                      fontSize: 12,
+                      color: '#666',
+                      whiteSpace: 'pre-wrap'
+                    }}
+                  >
+                    {tpl.content}
+                  </div>
+                </Card>
+              </List.Item>
+            )}
+          />
+        )}
+      </div>
+    );
+  };
+
+  const renderMaterialsTab = () => {
+    if (!relatedData) return null;
+    const { materials } = relatedData;
+    return (
+      <div>
+        <Text type="secondary" style={{ display: 'block', marginBottom: 16 }}>
+          共 {materials.length} 项材料要求
+        </Text>
+        {materials.length === 0 ? (
+          <Empty description="暂无材料要求" />
+        ) : (
+          <List
+            dataSource={materials}
+            renderItem={(mt: MaterialType & { usage_count?: number }) => (
+              <List.Item key={mt.id}>
+                <Card
+                  style={{ width: '100%' }}
+                  size="small"
+                  title={
+                    <Space>
+                      {mt.required ? (
+                        <Tag color="red" icon={<InfoCircleOutlined />}>必需</Tag>
+                      ) : (
+                        <Tag color="blue">可选</Tag>
+                      )}
+                      <Text strong>{mt.name}</Text>
+                      <Text type="secondary" code>{mt.code}</Text>
+                    </Space>
+                  }
+                >
+                  <Paragraph style={{ marginBottom: 8 }}>
+                    {mt.description || '暂无描述'}
+                  </Paragraph>
+                  <Space size="large">
+                    <Text type="secondary">
+                      <PaperClipOutlined style={{ marginRight: 4 }} />
+                      允许格式: {mt.allowed_extensions || '不限'}
+                    </Text>
+                    <Text type="secondary">
+                      最大大小: {mt.max_size ? `${Math.round(mt.max_size / 1024 / 1024)}MB` : '不限'}
+                    </Text>
+                    {mt.usage_count !== undefined && mt.usage_count > 0 && (
+                      <Tag color="green">已上传 {mt.usage_count} 次</Tag>
+                    )}
+                  </Space>
+                </Card>
+              </List.Item>
+            )}
+          />
+        )}
+      </div>
+    );
+  };
+
+  const renderCasesTab = () => {
+    if (!relatedData) return null;
+    const { history_cases } = relatedData;
+    return (
+      <div>
+        <Text type="secondary" style={{ display: 'block', marginBottom: 16 }}>
+          共 {history_cases.length} 个成功案例
+        </Text>
+        {history_cases.length === 0 ? (
+          <Empty description="暂无历史案例" />
+        ) : (
+          <List
+            dataSource={history_cases}
+            renderItem={(caseItem) => (
+              <List.Item
+                key={caseItem.id}
+                actions={[
+                  <Button
+                    type="link"
+                    icon={<EyeOutlined />}
+                    onClick={() => handleViewCase(caseItem)}
+                  >
+                    查看详情
+                  </Button>
+                ]}
+              >
+                <List.Item.Meta
+                  avatar={<Avatar icon={<FileSearchOutlined />} style={{ backgroundColor: '#1890ff' }} />}
+                  title={
+                    <Space>
+                      <Text strong>{caseItem.title}</Text>
+                      <Tag color="green" icon={<CheckCircleOutlined />}>已立项</Tag>
+                      {caseItem.approval_count !== undefined && caseItem.approval_count > 0 && (
+                        <Tag color="blue">{caseItem.approval_count} 轮审批</Tag>
+                      )}
+                    </Space>
+                  }
+                  description={
+                    <Space direction="vertical" size={4}>
+                      <Space>
+                        <Text type="secondary"><TeamOutlined /> {caseItem.company}</Text>
+                        <Text type="secondary">申请人: {caseItem.applicant}</Text>
+                        <Text type="secondary">
+                          <HistoryOutlined /> {dayjs(caseItem.created_at).format('YYYY-MM-DD')}
+                        </Text>
+                      </Space>
+                      <Paragraph
+                        ellipsis={{ rows: 2 }}
+                        style={{ marginBottom: 0, color: '#666' }}
+                      >
+                        {caseItem.content}
+                      </Paragraph>
+                    </Space>
+                  }
+                />
+              </List.Item>
+            )}
+          />
+        )}
+      </div>
+    );
+  };
+
+  const renderFaqsTab = () => {
+    if (!relatedData) return null;
+    const { faqs } = relatedData;
+    return (
+      <div>
+        <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'space-between' }}>
+          <Text type="secondary">共 {faqs.length} 个常见问题</Text>
+          <Button type="primary" icon={<PlusOutlined />} onClick={handleAddFaq}>
+            新增问题
+          </Button>
+        </div>
+        {faqs.length === 0 ? (
+          <Empty description="暂无常见问题" />
+        ) : (
+          <Collapse accordion>
+            {faqs.map((faq) => (
+              <Panel
+                key={faq.id}
+                header={
+                  <Space>
+                    <QuestionCircleOutlined style={{ color: '#1890ff' }} />
+                    <span>{faq.question}</span>
+                    <span style={{ marginLeft: 'auto' }}>
+                      <Space>
+                        <Button
+                          size="small"
+                          icon={<EditOutlined />}
+                          onClick={(e) => { e.stopPropagation(); handleEditFaq(faq); }}
+                        />
+                        <Popconfirm
+                          title="确定删除此问题？"
+                          onConfirm={(e) => { e?.stopPropagation(); handleDeleteFaq(faq); }}
+                        >
+                          <Button
+                            size="small"
+                            danger
+                            icon={<DeleteOutlined />}
+                            onClick={(e) => e.stopPropagation()}
+                          />
+                        </Popconfirm>
+                      </Space>
+                    </span>
+                  </Space>
+                }
+              >
+                <div style={{ whiteSpace: 'pre-wrap', padding: '8px 0' }}>
+                  {faq.answer}
+                </div>
+              </Panel>
+            ))}
+          </Collapse>
+        )}
+      </div>
+    );
+  };
+
   const columns = [
     {
       title: 'ID',
@@ -358,8 +916,18 @@ function Guidelines() {
       title: '截止日期',
       dataIndex: 'deadline',
       key: 'deadline',
-      width: 120,
-      render: (text: string | null) => text || '长期有效'
+      width: 140,
+      render: (text: string | null) => (
+        <Space>
+          {text || '长期有效'}
+          {text && dayjs(text).isBefore(dayjs()) && (
+            <Tag color="red">已截止</Tag>
+          )}
+          {text && dayjs(text).diff(dayjs(), 'day') <= 7 && dayjs(text).isAfter(dayjs()) && (
+            <Tag color="orange">即将截止</Tag>
+          )}
+        </Space>
+      )
     },
     {
       title: '创建时间',
@@ -371,10 +939,11 @@ function Guidelines() {
     {
       title: '操作',
       key: 'action',
-      width: 280,
+      width: 340,
       render: (_: any, record: Guideline) => (
         <Space size="small">
           <Button type="link" icon={<EyeOutlined />} onClick={() => handleDetail(record)}>查看</Button>
+          <Button type="primary" size="small" icon={<RocketOutlined />} onClick={() => handleStartDeclaration(record)}>申报</Button>
           <Button type="link" icon={<EditOutlined />} onClick={() => handleEdit(record)}>编辑</Button>
           <Button type="link" icon={<SettingOutlined />} onClick={() => handleWorkflowConfig(record)}>审批流</Button>
           <Button type="link" danger icon={<DeleteOutlined />} onClick={() => handleDelete(record)}>删除</Button>
@@ -473,24 +1042,175 @@ function Guidelines() {
         open={detailVisible}
         onCancel={() => setDetailVisible(false)}
         footer={[
+          currentGuideline && (
+            <Button
+              key="declare"
+              type="primary"
+              icon={<RocketOutlined />}
+              onClick={() => handleStartDeclaration(currentGuideline)}
+            >
+              立即申报
+            </Button>
+          ),
           <Button key="close" onClick={() => setDetailVisible(false)}>关闭</Button>
         ]}
-        width={700}
+        width={960}
         destroyOnClose
       >
-        {currentGuideline && (
-          <div>
-            <div style={{ marginBottom: 16 }}>
-              <Tag color="blue">{currentGuideline.category}</Tag>
-              <span style={{ color: '#999', marginLeft: 8 }}>
-                截止日期: {currentGuideline.deadline || '长期有效'}
-              </span>
-            </div>
-            <Card bordered={false} style={{ background: '#fafafa', whiteSpace: 'pre-wrap' }}>
-              {currentGuideline.content}
-            </Card>
-          </div>
-        )}
+        <Spin spinning={detailLoading} tip="加载中...">
+          <Tabs activeKey={detailTab} onChange={setDetailTab}>
+            <TabPane
+              tab={
+                <span>
+                  <FileTextOutlined />
+                  指南内容
+                </span>
+              }
+              key="content"
+            >
+              {renderContentTab()}
+            </TabPane>
+            <TabPane
+              tab={
+                <span>
+                  <FormOutlined />
+                  申报模板
+                  {relatedData?.stats.template_count !== undefined && relatedData.stats.template_count > 0 && (
+                    <Badge
+                      count={relatedData.stats.template_count}
+                      style={{ marginLeft: 4 }}
+                    />
+                  )}
+                </span>
+              }
+              key="templates"
+            >
+              {renderTemplatesTab()}
+            </TabPane>
+            <TabPane
+              tab={
+                <span>
+                  <PaperClipOutlined />
+                  材料清单
+                  {relatedData && (
+                    <Badge
+                      count={relatedData.materials.filter(m => m.required).length}
+                      style={{ marginLeft: 4, backgroundColor: '#ff4d4f' }}
+                      title="必需材料数"
+                    />
+                  )}
+                </span>
+              }
+              key="materials"
+            >
+              {renderMaterialsTab()}
+            </TabPane>
+            <TabPane
+              tab={
+                <span>
+                  <HistoryOutlined />
+                  历史案例
+                  {relatedData?.stats.approved_count !== undefined && relatedData.stats.approved_count > 0 && (
+                    <Badge
+                      count={relatedData.stats.approved_count}
+                      style={{ marginLeft: 4, backgroundColor: '#52c41a' }}
+                    />
+                  )}
+                </span>
+              }
+              key="cases"
+            >
+              {renderCasesTab()}
+            </TabPane>
+            <TabPane
+              tab={
+                <span>
+                  <QuestionCircleOutlined />
+                  常见问题
+                  {relatedData?.stats.faq_count !== undefined && relatedData.stats.faq_count > 0 && (
+                    <Badge
+                      count={relatedData.stats.faq_count}
+                      style={{ marginLeft: 4 }}
+                    />
+                  )}
+                </span>
+              }
+              key="faqs"
+            >
+              {renderFaqsTab()}
+            </TabPane>
+          </Tabs>
+        </Spin>
+      </Modal>
+
+      <Modal
+        title={editingTemplate ? '编辑申报模板' : '新增申报模板'}
+        open={templateModalVisible}
+        onOk={handleSaveTemplate}
+        onCancel={() => setTemplateModalVisible(false)}
+        width={640}
+        destroyOnClose
+      >
+        <Form form={templateForm} layout="vertical">
+          <Form.Item
+            name="title"
+            label="模板名称"
+            rules={[{ required: true, message: '请输入模板名称' }]}
+          >
+            <Input placeholder="如：科技型中小企业创新基金申报模板" />
+          </Form.Item>
+          <Form.Item name="description" label="模板描述">
+            <Input placeholder="简要说明模板的适用场景" />
+          </Form.Item>
+          <Row gutter={16}>
+            <Col span={12}>
+              <Form.Item name="sort_order" label="排序" initialValue={0}>
+                <Input type="number" placeholder="数字越小越靠前" />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item name="is_default" label="设为默认模板" valuePropName="checked" initialValue={false}>
+                <Switch />
+              </Form.Item>
+            </Col>
+          </Row>
+          <Form.Item
+            name="content"
+            label="模板内容"
+            rules={[{ required: true, message: '请输入模板内容' }]}
+          >
+            <TextArea rows={12} placeholder="请输入申报模板内容，使用换行分隔各章节" />
+          </Form.Item>
+        </Form>
+      </Modal>
+
+      <Modal
+        title={editingFaq ? '编辑常见问题' : '新增常见问题'}
+        open={faqModalVisible}
+        onOk={handleSaveFaq}
+        onCancel={() => setFaqModalVisible(false)}
+        width={640}
+        destroyOnClose
+      >
+        <Form form={faqForm} layout="vertical">
+          <Form.Item
+            name="question"
+            label="问题"
+            rules={[{ required: true, message: '请输入问题' }]}
+          >
+            <Input placeholder="请输入问题" />
+          </Form.Item>
+          <Form.Item name="sort_order" label="排序" initialValue={0}>
+            <Input type="number" placeholder="数字越小越靠前" />
+          </Form.Item>
+          <Form.Item
+            name="answer"
+            label="回答"
+            rules={[{ required: true, message: '请输入回答' }]}
+          >
+            <TextArea rows={6} placeholder="请输入详细的回答内容" />
+          </Form.Item>
+        </Form>
       </Modal>
 
       <Modal
