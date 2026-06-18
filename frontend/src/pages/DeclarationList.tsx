@@ -28,7 +28,7 @@ function DeclarationList() {
   const loadStats = async () => {
     try {
       const res = await getDeclarationStats();
-      if (res.success) setStats(res.data);
+      if (res.success) setStats(res.data ?? null);
     } catch (e) {}
   };
 

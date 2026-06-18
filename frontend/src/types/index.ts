@@ -145,11 +145,20 @@ export interface RecycleBinItem {
   title: string;
   applicant: string;
   company: string;
+  phone: string;
+  email: string;
+  content: string;
   status: string;
+  current_step: number;
   created_at: string;
+  updated_at: string;
   deleted_at: string;
-  guideline_title?: string;
+  deleted_by?: string | null;
+  last_auto_save_at?: string | null;
   version_count?: number;
+  guideline_id?: number | null;
+  guideline_title?: string;
+  is_deleted?: number;
 }
 
 export interface RecycleBinListResponse {
@@ -221,6 +230,7 @@ export interface OperationLog {
   detail: string;
   ip: string;
   created_at: string;
+  version_number?: number | null;
 }
 
 export interface ApiResponse<T> {

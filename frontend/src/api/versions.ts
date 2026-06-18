@@ -34,8 +34,7 @@ export const autosaveDraft = (declarationId: number, data: any) => {
     version_number: number;
     saved_at: string;
     changes: string[];
-    skipped?: boolean;
-  }>>(`/versions/declaration/${declarationId}/autosave`, data);
+  }> & { skipped?: boolean }>(`/versions/declaration/${declarationId}/autosave`, data);
 };
 
 export const saveVersion = (

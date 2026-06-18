@@ -194,7 +194,7 @@ function Logs() {
       key: 'module',
       width: 100,
       filters: MODULE_OPTIONS.map(m => ({ text: m.label, value: m.value })),
-      onFilter: (v, rec) => (rec as any).module === v,
+      onFilter: (v: string | number | boolean, rec: ExtendedLog) => rec.module === v,
       render: (text: string) => text ? <Tag color={getModuleColor(text)}>{text}</Tag> : '-'
     },
     {

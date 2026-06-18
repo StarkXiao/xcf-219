@@ -66,55 +66,6 @@ router.get('/', (req, res) => {
   }
 });
 
-router.get('/:id', (req, res) => {
-  try {
-    const log = get('SELECT * FROM operation_logs WHERE id = ?', [req.params.id]);
-    if (!log) {
-      return res.status(404).json({ success: false, message: '日志不存在' });
-    }
-    const parsed = parseLogData(log);
-    res.json({ success: true, data: parsed });
-  } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
-  }
-});
-
-router.get('/target/:module/:targetId', (req, res) => {
-  try {
-    const { module, targetId } = req.params;
-    const { page = 1, pageSize = 50, include_data = 'true' } = req.query;
-    
-    const selectFields = include_data === 'true' ? '*' : 'id, user, action, module, target_id, detail, ip, version_number, created_at';
-    
-    let sql = `SELECT ${selectFields} FROM operation_logs WHERE module = ? AND target_id = ?`;
-    let countSql = 'SELECT COUNT(*) as total FROM operation_logs WHERE module = ? AND target_id = ?';
-    const params = [module, targetId];
-    const countParams = [module, targetId];
-
-    sql += ' ORDER BY created_at DESC LIMIT ? OFFSET ?';
-    const offset = (page - 1) * pageSize;
-    params.push(parseInt(pageSize), parseInt(offset));
-
-    const logs = all(sql, params);
-    const parsedLogs = include_data === 'true' ? logs.map(parseLogData) : logs;
-    const totalResult = get(countSql, countParams);
-
-    res.json({
-      success: true,
-      data: {
-        module,
-        target_id: targetId,
-        list: parsedLogs,
-        total: totalResult.total,
-        page: parseInt(page),
-        pageSize: parseInt(pageSize)
-      }
-    });
-  } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
-  }
-});
-
 router.get('/statistics', (req, res) => {
   try {
     const { start_date, end_date } = req.query;
@@ -181,6 +132,42 @@ router.get('/statistics', (req, res) => {
   }
 });
 
+router.get('/target/:module/:targetId', (req, res) => {
+  try {
+    const { module, targetId } = req.params;
+    const { page = 1, pageSize = 50, include_data = 'true' } = req.query;
+    
+    const selectFields = include_data === 'true' ? '*' : 'id, user, action, module, target_id, detail, ip, version_number, created_at';
+    
+    let sql = `SELECT ${selectFields} FROM operation_logs WHERE module = ? AND target_id = ?`;
+    let countSql = 'SELECT COUNT(*) as total FROM operation_logs WHERE module = ? AND target_id = ?';
+    const params = [module, targetId];
+    const countParams = [module, targetId];
+
+    sql += ' ORDER BY created_at DESC LIMIT ? OFFSET ?';
+    const offset = (page - 1) * pageSize;
+    params.push(parseInt(pageSize), parseInt(offset));
+
+    const logs = all(sql, params);
+    const parsedLogs = include_data === 'true' ? logs.map(parseLogData) : logs;
+    const totalResult = get(countSql, countParams);
+
+    res.json({
+      success: true,
+      data: {
+        module,
+        target_id: targetId,
+        list: parsedLogs,
+        total: totalResult.total,
+        page: parseInt(page),
+        pageSize: parseInt(pageSize)
+      }
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
 router.get('/module/declaration/:declarationId', (req, res) => {
   try {
     const declarationId = req.params.declarationId;
@@ -207,6 +194,19 @@ router.get('/module/declaration/:declarationId', (req, res) => {
         total: logs.length
       }
     });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+router.get('/:id', (req, res) => {
+  try {
+    const log = get('SELECT * FROM operation_logs WHERE id = ?', [req.params.id]);
+    if (!log) {
+      return res.status(404).json({ success: false, message: '日志不存在' });
+    }
+    const parsed = parseLogData(log);
+    res.json({ success: true, data: parsed });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }

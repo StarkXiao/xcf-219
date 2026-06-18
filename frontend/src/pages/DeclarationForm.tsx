@@ -52,7 +52,7 @@ function DeclarationForm() {
   const [lastAutoSaveAt, setLastAutoSaveAt] = useState<Date | null>(null);
   const [versionCount, setVersionCount] = useState(0);
   const [saveTypeOptions, setSaveTypeOptions] = useState<SaveTypeOption[]>([]);
-  const autoSaveTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const autoSaveTimerRef = useRef<number | null>(null);
   const lastFormValuesRef = useRef<any>(null);
   const isManualSaveRef = useRef(false);
 
@@ -320,7 +320,7 @@ function DeclarationForm() {
     try {
       const res = await getVersions(declaration.id, { page, pageSize: 20 });
       if (res.success) {
-        setVersions(res.data);
+        setVersions(res.data ?? null);
       }
     } catch (e) {
       message.error('加载版本历史失败');
@@ -351,7 +351,7 @@ function DeclarationForm() {
         type
       });
       if (res.success) {
-        setCompareResult(res.data);
+        setCompareResult(res.data ?? null);
       }
     } catch (e) {
       message.error('对比失败');
@@ -366,7 +366,7 @@ function DeclarationForm() {
     setRestoreLoading(true);
     try {
       const res = await previewRestoreVersion(declaration.id, version.version_number);
-      if (res.success) setRestorePreview(res.data);
+      if (res.success) setRestorePreview(res.data ?? null);
     } catch (e) {
       message.error('加载恢复预览失败');
     }

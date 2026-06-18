@@ -41,8 +41,8 @@ function RecycleBin() {
         pageSize: 20
       });
       if (res.success) {
-        setData(res.data);
-        setStats({ total: res.data.total });
+        setData(res.data ?? null);
+        setStats({ total: res.data?.total ?? 0 });
       }
     } catch (e) {
       message.error('加载回收站失败');
@@ -152,7 +152,7 @@ function RecycleBin() {
               try {
                 const res = await clearRecycleBin({ older_than_days: 7 });
                 if (res.success) {
-                  message.success(`已清理7天前的记录：${res.data.deleted_count} 条`);
+                  message.success(`已清理7天前的记录：${res.data?.deleted_count ?? 0} 条`);
                   loadData(1);
                   Modal.destroyAll();
                 }
@@ -162,7 +162,7 @@ function RecycleBin() {
               try {
                 const res = await clearRecycleBin({ older_than_days: 30 });
                 if (res.success) {
-                  message.success(`已清理30天前的记录：${res.data.deleted_count} 条`);
+                  message.success(`已清理30天前的记录：${res.data?.deleted_count ?? 0} 条`);
                   loadData(1);
                   Modal.destroyAll();
                 }
@@ -176,7 +176,7 @@ function RecycleBin() {
         try {
           const res = await clearRecycleBin();
           if (res.success) {
-            message.success(`已清空回收站，共删除 ${res.data.deleted_count} 条`);
+            message.success(`已清空回收站，共删除 ${res.data?.deleted_count ?? 0} 条`);
             setSelectedRowKeys([]);
             loadData(1);
           }
