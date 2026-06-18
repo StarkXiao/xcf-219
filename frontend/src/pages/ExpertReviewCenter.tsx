@@ -135,7 +135,7 @@ const ExpertReviewCenter: React.FC = () => {
           </Col>
 
           <Col xs={24} sm={12} md={6}>
-            <Card hoverable onClick={() => navigate('/expert-review/dispatch')}>
+            <Card hoverable onClick={() => navigate('/expert-review/groups')}>
               <Statistic
                 title="评审分组"
                 value={stats?.group_total || 0}
@@ -178,7 +178,7 @@ const ExpertReviewCenter: React.FC = () => {
           </Col>
 
           <Col xs={24} sm={12} md={6}>
-            <Card hoverable onClick={() => navigate('/expert-review/summary')}>
+            <Card hoverable onClick={() => navigate('/expert-review/summaries')}>
               <Statistic
                 title="评审汇总"
                 value={stats?.summary_total || 0}
@@ -317,7 +317,7 @@ const ExpertReviewCenter: React.FC = () => {
                     <Button
                       icon={<SolutionOutlined />}
                       block
-                      onClick={() => navigate('/expert-review/dispatch')}
+                      onClick={() => navigate('/expert-review/groups')}
                     >
                       分组派单
                     </Button>
@@ -335,7 +335,7 @@ const ExpertReviewCenter: React.FC = () => {
                     <Button
                       icon={<CheckCircleOutlined />}
                       block
-                      onClick={() => navigate('/expert-review/summary')}
+                      onClick={() => navigate('/expert-review/summaries')}
                     >
                       结果汇总
                     </Button>
