@@ -4,7 +4,10 @@ import type {
   ApiResponse,
   DeclarationStats,
   QualificationCheckResult,
-  TodoKanbanSummary
+  TodoKanbanSummary,
+  SavedFilter,
+  BatchCheckResult,
+  BatchSubmitResult
 } from '../types';
 
 export const getDeclarations = (params?: {
@@ -77,4 +80,46 @@ export const checkQualification = (data: {
 
 export const getTodoKanbanSummary = (params?: { role?: string }) => {
   return api.get<any, ApiResponse<TodoKanbanSummary>>('/declarations/todo-kanban/summary', { params });
+};
+
+export const batchExportDeclarations = (ids: number[]) => {
+  return api.post('/declarations/batch/export', { ids }, { responseType: 'blob' });
+};
+
+export const batchSubmitDeclarations = (ids: number[]) => {
+  return api.post<any, ApiResponse<BatchSubmitResult>>('/declarations/batch/submit', { ids });
+};
+
+export const batchQualificationCheck = (ids: number[]) => {
+  return api.post<any, ApiResponse<{ data: BatchCheckResult[]; summary: { total: number; passed: number; failed: number; avg_score: number } }>>(
+    '/declarations/batch/qualification-check',
+    { ids }
+  );
+};
+
+export const batchFollowDeclarations = (ids: number[], followed: boolean) => {
+  return api.post<any, ApiResponse<Array<{ id: number; title: string; is_followed: number }>>>(
+    '/declarations/batch/follow',
+    { ids, followed }
+  );
+};
+
+export const toggleFollowDeclaration = (id: number, followed: boolean) => {
+  return api.post<any, ApiResponse<{ is_followed: number }>>(`/declarations/${id}/follow`, { followed });
+};
+
+export const getSavedFilters = (module = 'declarations') => {
+  return api.get<any, ApiResponse<SavedFilter[]>>('/declarations/filters', { params: { module } });
+};
+
+export const createSavedFilter = (data: { name: string; module?: string; filter_data: Record<string, any>; is_default?: number }) => {
+  return api.post<any, ApiResponse<SavedFilter>>('/declarations/filters', data);
+};
+
+export const updateSavedFilter = (id: number, data: { name?: string; filter_data?: Record<string, any>; is_default?: number }) => {
+  return api.put<any, ApiResponse<SavedFilter>>(`/declarations/filters/${id}`, data);
+};
+
+export const deleteSavedFilter = (id: number) => {
+  return api.delete<any, ApiResponse<void>>(`/declarations/filters/${id}`);
 };

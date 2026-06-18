@@ -86,6 +86,36 @@ export interface Declaration {
   last_auto_save_at?: string | null;
   version_count?: number;
   is_in_recycle_bin?: boolean;
+  is_followed?: number;
+}
+
+export interface SavedFilter {
+  id: number;
+  name: string;
+  module: string;
+  filter_data: Record<string, any>;
+  user?: string | null;
+  is_default: number;
+  sort_order: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface BatchCheckResult {
+  id: number;
+  title: string;
+  score: number;
+  total_checks: number;
+  passed_checks: number;
+  can_submit: boolean;
+  high_risk_count: number;
+  medium_risk_count: number;
+  risks: Array<{ id: string; level: string; title: string }>;
+}
+
+export interface BatchSubmitResult {
+  success: Array<{ id: number; title: string }>;
+  failed: Array<{ id: number; title: string; reason: string }>;
 }
 
 export type SaveType = 'auto' | 'manual' | 'submit' | 'status_change' | 'rollback' | 'restore';

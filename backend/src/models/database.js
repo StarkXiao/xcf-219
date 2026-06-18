@@ -239,11 +239,24 @@ function initDatabase() {
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
+
+    CREATE TABLE IF NOT EXISTS saved_filters (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      module TEXT NOT NULL,
+      filter_data TEXT NOT NULL,
+      user TEXT,
+      is_default INTEGER DEFAULT 0,
+      sort_order INTEGER DEFAULT 0,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
   `);
 
   safeAddColumn('attachments', 'material_type_id', 'INTEGER REFERENCES material_types(id)');
   safeAddColumn('attachments', 'file_hash', 'TEXT');
   safeAddColumn('declarations', 'workflow_config_id', 'INTEGER REFERENCES workflow_configs(id)');
+  safeAddColumn('declarations', 'is_followed', 'INTEGER DEFAULT 0');
   safeAddColumn('approval_records', 'step_name', 'TEXT');
   safeAddColumn('approval_records', 'step_role', 'TEXT');
   safeAddColumn('approval_records', 'reason_category', 'TEXT');
@@ -252,9 +265,12 @@ function initDatabase() {
   safeCreateIndex('idx_workflow_configs_guideline', 'workflow_configs', 'guideline_id');
   safeCreateIndex('idx_workflow_config_steps_config', 'workflow_config_steps', 'config_id');
   safeCreateIndex('idx_declarations_workflow_config', 'declarations', 'workflow_config_id');
+  safeCreateIndex('idx_declarations_followed', 'declarations', 'is_followed');
   safeCreateIndex('idx_declaration_templates_guideline', 'declaration_templates', 'guideline_id');
   safeCreateIndex('idx_faqs_guideline', 'faqs', 'guideline_id');
   safeCreateIndex('idx_approval_reason_categories_action', 'approval_reason_categories', 'action_type');
+  safeCreateIndex('idx_saved_filters_module', 'saved_filters', 'module');
+  safeCreateIndex('idx_saved_filters_user', 'saved_filters', 'user');
 
   const guidelineCount = get('SELECT COUNT(*) as count FROM guidelines');
   if (guidelineCount.count === 0) {

@@ -1,5 +1,5 @@
 import { Routes, Route, useNavigate, useLocation } from 'react-router-dom';
-import { Layout, Menu, theme, Badge } from 'antd';
+import { Layout, Menu, theme, Badge, App as AntdApp } from 'antd';
 import {
   FileTextOutlined,
   FormOutlined,
@@ -85,50 +85,52 @@ function App() {
   };
 
   return (
-    <Layout style={{ minHeight: '100vh' }}>
-      <Header style={{ display: 'flex', alignItems: 'center', background: '#001529' }}>
-        <div style={{ color: '#fff', fontSize: '20px', fontWeight: 'bold', marginRight: '48px' }}>
-          企业项目申报管理系统
-        </div>
-      </Header>
-      <Layout>
-        <Sider width={200} style={{ background: colorBgContainer }}>
-          <Menu
-            mode="inline"
-            selectedKeys={[getSelectedKey()]}
-            items={menuItems}
-            onClick={({ key }) => navigate(key)}
-            style={{ height: '100%', borderRight: 0 }}
-          />
-        </Sider>
-        <Layout style={{ padding: '16px' }}>
-          <Content
-            style={{
-              padding: 24,
-              margin: 0,
-              minHeight: 280,
-              background: colorBgContainer,
-              borderRadius: borderRadiusLG,
-            }}
-          >
-            <Routes>
-              <Route path="/" element={<Dashboard />} />
-              <Route path="/dashboard" element={<Dashboard />} />
-              <Route path="/guidelines" element={<Guidelines />} />
-              <Route path="/declarations" element={<DeclarationList />} />
-              <Route path="/declarations/new" element={<DeclarationForm />} />
-              <Route path="/declarations/:id/edit" element={<DeclarationForm />} />
-              <Route path="/declarations/:id" element={<DeclarationDetail />} />
-              <Route path="/recycle-bin" element={<RecycleBin />} />
-              <Route path="/attachments" element={<AttachmentDemo />} />
-              <Route path="/workflow" element={<WorkflowDemo />} />
-              <Route path="/approval" element={<Approval />} />
-              <Route path="/logs" element={<Logs />} />
-            </Routes>
-          </Content>
+    <AntdApp>
+      <Layout style={{ minHeight: '100vh' }}>
+        <Header style={{ display: 'flex', alignItems: 'center', background: '#001529' }}>
+          <div style={{ color: '#fff', fontSize: '20px', fontWeight: 'bold', marginRight: '48px' }}>
+            企业项目申报管理系统
+          </div>
+        </Header>
+        <Layout>
+          <Sider width={200} style={{ background: colorBgContainer }}>
+            <Menu
+              mode="inline"
+              selectedKeys={[getSelectedKey()]}
+              items={menuItems}
+              onClick={({ key }) => navigate(key)}
+              style={{ height: '100%', borderRight: 0 }}
+            />
+          </Sider>
+          <Layout style={{ padding: '16px' }}>
+            <Content
+              style={{
+                padding: 24,
+                margin: 0,
+                minHeight: 280,
+                background: colorBgContainer,
+                borderRadius: borderRadiusLG,
+              }}
+            >
+              <Routes>
+                <Route path="/" element={<Dashboard />} />
+                <Route path="/dashboard" element={<Dashboard />} />
+                <Route path="/guidelines" element={<Guidelines />} />
+                <Route path="/declarations" element={<DeclarationList />} />
+                <Route path="/declarations/new" element={<DeclarationForm />} />
+                <Route path="/declarations/:id/edit" element={<DeclarationForm />} />
+                <Route path="/declarations/:id" element={<DeclarationDetail />} />
+                <Route path="/recycle-bin" element={<RecycleBin />} />
+                <Route path="/attachments" element={<AttachmentDemo />} />
+                <Route path="/workflow" element={<WorkflowDemo />} />
+                <Route path="/approval" element={<Approval />} />
+                <Route path="/logs" element={<Logs />} />
+              </Routes>
+            </Content>
+          </Layout>
         </Layout>
       </Layout>
-    </Layout>
+    </AntdApp>
   );
 }
 

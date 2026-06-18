@@ -1013,4 +1013,413 @@ router.get('/todo-kanban/summary', (req, res) => {
   }
 });
 
+router.post('/batch/export', (req, res) => {
+  try {
+    const { ids } = req.body;
+    if (!ids || !Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ success: false, message: '请选择要导出的申报' });
+    }
+
+    const placeholders = ids.map(() => '?').join(',');
+    const declarations = all(`
+      SELECT d.*, g.title as guideline_title 
+      FROM declarations d 
+      LEFT JOIN guidelines g ON d.guideline_id = g.id 
+      WHERE d.id IN (${placeholders}) AND d.is_deleted = 0
+      ORDER BY d.created_at DESC
+    `, ids);
+
+    const STATUS_LABEL = {
+      draft: '草稿',
+      submitted: '待初审',
+      reviewing: '初审中',
+      first_reviewed: '待复审',
+      second_reviewed: '待终审',
+      approved: '已立项',
+      rejected: '已驳回'
+    };
+
+    const csvHeader = ['ID', '项目名称', '申请人', '企业名称', '关联指南', '状态', '联系电话', '电子邮箱', '创建时间', '更新时间'];
+    const csvRows = declarations.map(d => [
+      d.id,
+      `"${(d.title || '').replace(/"/g, '""')}"`,
+      `"${(d.applicant || '').replace(/"/g, '""')}"`,
+      `"${(d.company || '').replace(/"/g, '""')}"`,
+      `"${(d.guideline_title || '').replace(/"/g, '""')}"`,
+      STATUS_LABEL[d.status] || d.status,
+      d.phone || '',
+      d.email || '',
+      d.created_at || '',
+      d.updated_at || ''
+    ]);
+
+    const csvContent = '\ufeff' + [csvHeader.join(','), ...csvRows.map(r => r.join(','))].join('\n');
+
+    logOperation(req, '批量导出', '申报表单', null, `导出 ${declarations.length} 条申报记录`);
+
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="declarations_${Date.now()}.csv"`);
+    res.send(csvContent);
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+router.post('/batch/submit', (req, res) => {
+  try {
+    const { ids } = req.body;
+    if (!ids || !Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ success: false, message: '请选择要提交的申报' });
+    }
+
+    const user = getCurrentUser(req);
+    const results = { success: [], failed: [] };
+    const placeholders = ids.map(() => '?').join(',');
+    const declarations = all(`SELECT * FROM declarations WHERE id IN (${placeholders}) AND is_deleted = 0`, ids);
+
+    declarations.forEach(declaration => {
+      if (declaration.status !== 'draft') {
+        results.failed.push({ id: declaration.id, title: declaration.title, reason: '只能提交草稿状态的申报' });
+        return;
+      }
+
+      let workflowConfigId = declaration.workflow_config_id;
+      let firstStepName = '初审';
+      let firstStepRole = '初审员';
+
+      if (!workflowConfigId && declaration.guideline_id) {
+        const config = get('SELECT id FROM workflow_configs WHERE guideline_id = ?', [declaration.guideline_id]);
+        if (config) {
+          workflowConfigId = config.id;
+          const firstStep = get(
+            'SELECT name, role FROM workflow_config_steps WHERE config_id = ? ORDER BY step_order LIMIT 1',
+            [config.id]
+          );
+          if (firstStep) {
+            firstStepName = firstStep.name;
+            firstStepRole = firstStep.role;
+          }
+        }
+      } else if (workflowConfigId) {
+        const firstStep = get(
+          'SELECT name, role FROM workflow_config_steps WHERE config_id = ? ORDER BY step_order LIMIT 1',
+          [workflowConfigId]
+        );
+        if (firstStep) {
+          firstStepName = firstStep.name;
+          firstStepRole = firstStep.role;
+        }
+      }
+
+      run(`
+        UPDATE declarations 
+        SET status = 'submitted', current_step = 1, workflow_config_id = ?, updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+      `, [workflowConfigId, declaration.id]);
+
+      run(`
+        INSERT INTO approval_records (declaration_id, step, step_name, step_role, approver, action, comment)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `, [declaration.id, 1, firstStepName, firstStepRole, '系统', '提交', '批量提交申报材料']);
+
+      const updated = get('SELECT * FROM declarations WHERE id = ?', [declaration.id]);
+      saveVersion(null, declaration.id, updated, SAVE_TYPES.SUBMIT, user, '批量提交申报，进入审批流程');
+      results.success.push({ id: declaration.id, title: declaration.title });
+    });
+
+    const failedIds = declarations.filter(d => d.status !== 'draft').map(d => d.id);
+    ids.forEach(id => {
+      if (!declarations.find(d => d.id === id)) {
+        results.failed.push({ id, title: '未知', reason: '申报不存在或已删除' });
+      }
+    });
+
+    logOperation(req, '批量提交', '申报表单', null, 
+      `提交成功 ${results.success.length} 条，失败 ${results.failed.length} 条`);
+
+    res.json({
+      success: true,
+      message: `批量提交完成：成功 ${results.success.length} 条，失败 ${results.failed.length} 条`,
+      data: results
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+router.post('/batch/qualification-check', (req, res) => {
+  try {
+    const { ids } = req.body;
+    if (!ids || !Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ success: false, message: '请选择要校验的申报' });
+    }
+
+    const placeholders = ids.map(() => '?').join(',');
+    const declarations = all(`
+      SELECT d.*, g.title as guideline_title, g.category as guideline_category, g.deadline as guideline_deadline
+      FROM declarations d 
+      LEFT JOIN guidelines g ON d.guideline_id = g.id 
+      WHERE d.id IN (${placeholders}) AND d.is_deleted = 0
+    `, ids);
+
+    const results = [];
+    declarations.forEach(d => {
+      const risks = [];
+      let totalChecks = 0;
+      let passedChecks = 0;
+
+      totalChecks++;
+      if (d.guideline_id) {
+        passedChecks++;
+      } else {
+        risks.push({ id: 'no-guideline', level: 'medium', title: '未选择申报指南' });
+      }
+
+      totalChecks++;
+      if (d.company && d.company.trim().length >= 2) {
+        passedChecks++;
+      } else {
+        risks.push({ id: 'company-name-invalid', level: 'high', title: '企业名称不完整' });
+      }
+
+      totalChecks++;
+      if (d.applicant && d.applicant.trim().length >= 2) {
+        passedChecks++;
+      } else {
+        risks.push({ id: 'applicant-invalid', level: 'medium', title: '申请人信息不完整' });
+      }
+
+      totalChecks++;
+      const phoneRegex = /^1[3-9]\d{9}$/;
+      if (d.phone && phoneRegex.test(d.phone.trim())) {
+        passedChecks++;
+      } else {
+        risks.push({ id: 'phone-invalid', level: 'medium', title: '联系电话格式不正确' });
+      }
+
+      totalChecks++;
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (d.email && emailRegex.test(d.email.trim())) {
+        passedChecks++;
+      } else {
+        risks.push({ id: 'email-invalid', level: 'medium', title: '电子邮箱格式不正确' });
+      }
+
+      totalChecks++;
+      const contentLen = (d.content || '').length;
+      if (contentLen >= 200) {
+        passedChecks++;
+      } else {
+        risks.push({ id: 'content-too-short', level: 'medium', title: `项目内容描述不够详细(${contentLen}字)` });
+      }
+
+      const highRisks = risks.filter(r => r.level === 'high');
+      const score = totalChecks > 0 ? Math.round((passedChecks / totalChecks) * 100) : 0;
+      const canSubmit = highRisks.length === 0;
+
+      results.push({
+        id: d.id,
+        title: d.title,
+        score,
+        total_checks: totalChecks,
+        passed_checks: passedChecks,
+        can_submit: canSubmit,
+        high_risk_count: highRisks.length,
+        medium_risk_count: risks.filter(r => r.level === 'medium').length,
+        risks
+      });
+    });
+
+    logOperation(req, '批量校验', '申报表单', null, `校验 ${results.length} 条申报记录`);
+
+    res.json({
+      success: true,
+      data: results,
+      summary: {
+        total: results.length,
+        passed: results.filter(r => r.can_submit).length,
+        failed: results.filter(r => !r.can_submit).length,
+        avg_score: results.length > 0 ? Math.round(results.reduce((s, r) => s + r.score, 0) / results.length) : 0
+      }
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+router.post('/batch/follow', (req, res) => {
+  try {
+    const { ids, followed = true } = req.body;
+    if (!ids || !Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ success: false, message: '请选择要操作的申报' });
+    }
+
+    const user = getCurrentUser(req);
+    const placeholders = ids.map(() => '?').join(',');
+    const followValue = followed ? 1 : 0;
+
+    run(`
+      UPDATE declarations 
+      SET is_followed = ?, updated_at = CURRENT_TIMESTAMP
+      WHERE id IN (${placeholders}) AND is_deleted = 0
+    `, [followValue, ...ids]);
+
+    const updated = all(`SELECT id, title, is_followed FROM declarations WHERE id IN (${placeholders})`, ids);
+
+    logOperation(req, followed ? '批量标记关注' : '批量取消关注', '申报表单', null,
+      `${followed ? '标记关注' : '取消关注'} ${updated.length} 条申报记录`);
+
+    res.json({
+      success: true,
+      message: `${followed ? '标记关注' : '取消关注'}成功，共 ${updated.length} 条`,
+      data: updated
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+router.post('/:id/follow', (req, res) => {
+  try {
+    const { followed = true } = req.body;
+    const declaration = get('SELECT * FROM declarations WHERE id = ? AND is_deleted = 0', [req.params.id]);
+    if (!declaration) {
+      return res.status(404).json({ success: false, message: '申报不存在' });
+    }
+
+    const user = getCurrentUser(req);
+    const followValue = followed ? 1 : 0;
+    const beforeData = { ...declaration };
+
+    run(`
+      UPDATE declarations 
+      SET is_followed = ?, updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `, [followValue, req.params.id]);
+
+    const updated = get('SELECT * FROM declarations WHERE id = ?', [req.params.id]);
+
+    logOperationWithData(req, followed ? '标记关注' : '取消关注', '申报表单', req.params.id,
+      `${followed ? '标记关注' : '取消关注'}: ${declaration.title}`,
+      beforeData, updated, ['is_followed']);
+
+    res.json({ success: true, message: followed ? '已标记关注' : '已取消关注', data: { is_followed: followValue } });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+router.get('/filters', (req, res) => {
+  try {
+    const { module = 'declarations' } = req.query;
+    const user = getCurrentUser(req);
+
+    const filters = all(`
+      SELECT * FROM saved_filters 
+      WHERE module = ? AND (user = ? OR user IS NULL)
+      ORDER BY is_default DESC, sort_order ASC, created_at DESC
+    `, [module, user]);
+
+    const parsed = filters.map(f => ({
+      ...f,
+      filter_data: JSON.parse(f.filter_data)
+    }));
+
+    res.json({ success: true, data: parsed });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+router.post('/filters', (req, res) => {
+  try {
+    const { name, module = 'declarations', filter_data, is_default = 0 } = req.body;
+    const user = getCurrentUser(req);
+
+    if (!name || !name.trim()) {
+      return res.status(400).json({ success: false, message: '请输入筛选方案名称' });
+    }
+
+    if (!filter_data) {
+      return res.status(400).json({ success: false, message: '筛选条件不能为空' });
+    }
+
+    if (is_default) {
+      run(`UPDATE saved_filters SET is_default = 0 WHERE module = ? AND (user = ? OR user IS NULL)`, [module, user]);
+    }
+
+    const result = run(`
+      INSERT INTO saved_filters (name, module, filter_data, user, is_default, sort_order)
+      VALUES (?, ?, ?, ?, ?, 0)
+    `, [name.trim(), module, JSON.stringify(filter_data), user, is_default ? 1 : 0]);
+
+    const saved = get('SELECT * FROM saved_filters WHERE id = ?', [result.lastID]);
+
+    logOperation(req, '保存筛选方案', '筛选方案', result.lastID, `保存筛选方案: ${name}`);
+
+    res.json({
+      success: true,
+      message: '筛选方案已保存',
+      data: { ...saved, filter_data: JSON.parse(saved.filter_data) }
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+router.put('/filters/:id', (req, res) => {
+  try {
+    const { name, filter_data, is_default } = req.body;
+    const user = getCurrentUser(req);
+    const existing = get('SELECT * FROM saved_filters WHERE id = ?', [req.params.id]);
+
+    if (!existing) {
+      return res.status(404).json({ success: false, message: '筛选方案不存在' });
+    }
+
+    if (is_default) {
+      run(`UPDATE saved_filters SET is_default = 0 WHERE module = ? AND (user = ? OR user IS NULL) AND id != ?`, 
+        [existing.module, user, req.params.id]);
+    }
+
+    run(`
+      UPDATE saved_filters 
+      SET name = ?, filter_data = ?, is_default = ?, updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `, [
+      name !== undefined ? name.trim() : existing.name,
+      filter_data !== undefined ? JSON.stringify(filter_data) : existing.filter_data,
+      is_default !== undefined ? (is_default ? 1 : 0) : existing.is_default,
+      req.params.id
+    ]);
+
+    const updated = get('SELECT * FROM saved_filters WHERE id = ?', [req.params.id]);
+    logOperation(req, '更新筛选方案', '筛选方案', req.params.id, `更新筛选方案: ${name || existing.name}`);
+
+    res.json({
+      success: true,
+      message: '筛选方案已更新',
+      data: { ...updated, filter_data: JSON.parse(updated.filter_data) }
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+router.delete('/filters/:id', (req, res) => {
+  try {
+    const existing = get('SELECT * FROM saved_filters WHERE id = ?', [req.params.id]);
+    if (!existing) {
+      return res.status(404).json({ success: false, message: '筛选方案不存在' });
+    }
+
+    run('DELETE FROM saved_filters WHERE id = ?', [req.params.id]);
+    logOperation(req, '删除筛选方案', '筛选方案', req.params.id, `删除筛选方案: ${existing.name}`);
+
+    res.json({ success: true, message: '筛选方案已删除' });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
 module.exports = router;
