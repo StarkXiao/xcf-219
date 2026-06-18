@@ -302,6 +302,47 @@ export interface WorkflowStep {
   role: string;
 }
 
+export interface WorkflowConfigStep {
+  id?: number;
+  config_id?: number;
+  name: string;
+  step_key: string;
+  role: string;
+  step_order: number;
+  pending_status: string;
+  approved_status: string;
+  allow_rollback: boolean;
+  rollback_targets: number[];
+  created_at?: string;
+}
+
+export interface WorkflowConfig {
+  id: number;
+  guideline_id: number | null;
+  guideline_title?: string;
+  name: string;
+  description: string;
+  steps: WorkflowConfigStep[];
+  created_at: string;
+  updated_at: string;
+}
+
+export interface WorkflowInfo {
+  config: { id: number | null; name: string };
+  current_step: WorkflowConfigStep | null;
+  steps: WorkflowConfigStep[];
+  rollback_options: Array<{
+    step_order: number;
+    name: string;
+    status: string;
+  }>;
+}
+
+export interface WorkflowRoleOption {
+  value: string;
+  label: string;
+}
+
 export interface OperationLog {
   id: number;
   user: string;

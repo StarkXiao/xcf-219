@@ -8,6 +8,7 @@ const guidelinesRouter = require('./routes/guidelines');
 const declarationsRouter = require('./routes/declarations');
 const attachmentsRouter = require('./routes/attachments');
 const workflowRouter = require('./routes/workflow');
+const workflowConfigsRouter = require('./routes/workflow-configs');
 const logsRouter = require('./routes/logs');
 const versionsModule = require('./routes/versions');
 
@@ -29,6 +30,7 @@ app.use('/api/guidelines', guidelinesRouter);
 app.use('/api/declarations', declarationsRouter);
 app.use('/api/attachments', attachmentsRouter);
 app.use('/api/workflow', workflowRouter);
+app.use('/api/workflow-configs', workflowConfigsRouter);
 app.use('/api/logs', logsRouter);
 app.use('/api/versions', versionsModule.router);
 

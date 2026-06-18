@@ -255,11 +255,19 @@ router.post('/:id/submit', (req, res) => {
     const user = getCurrentUser(req);
     const beforeData = { ...declaration };
 
+    let workflowConfigId = declaration.workflow_config_id;
+    if (!workflowConfigId && declaration.guideline_id) {
+      const config = get('SELECT id FROM workflow_configs WHERE guideline_id = ?', [declaration.guideline_id]);
+      if (config) {
+        workflowConfigId = config.id;
+      }
+    }
+
     run(`
       UPDATE declarations 
-      SET status = 'submitted', current_step = 1, updated_at = CURRENT_TIMESTAMP
+      SET status = 'submitted', current_step = 1, workflow_config_id = ?, updated_at = CURRENT_TIMESTAMP
       WHERE id = ?
-    `, [req.params.id]);
+    `, [workflowConfigId, req.params.id]);
 
     run(`
       INSERT INTO approval_records (declaration_id, step, approver, action, comment)
@@ -271,7 +279,7 @@ router.post('/:id/submit', (req, res) => {
 
     logOperationWithData(req, '提交', '申报表单', req.params.id,
       `提交申报: ${declaration.title}`,
-      beforeData, updated, ['status', 'current_step'], versionResult.version_number);
+      beforeData, updated, ['status', 'current_step', 'workflow_config_id'], versionResult.version_number);
     
     res.json({ success: true, message: '提交成功', status: 'submitted' });
   } catch (error) {

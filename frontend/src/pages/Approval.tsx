@@ -2,26 +2,26 @@ import { useState, useEffect, useMemo } from 'react';
 import {
   Table, Button, Space, Tag, Modal, Form, Input, Select, message, Card,
   Tabs, Badge, List, Progress, Alert, Row, Col, Empty, Divider, Tooltip,
-  Popover
+  Popover, Radio, Steps
 } from 'antd';
 import {
   CheckOutlined, CloseOutlined, EyeOutlined, DownloadOutlined,
   PaperClipOutlined, FileSearchOutlined, FileDoneOutlined,
   WarningOutlined, FileProtectOutlined, CloudDownloadOutlined,
-  FolderOpenOutlined
+  FolderOpenOutlined, RollbackOutlined
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { getDeclarations } from '../api/declarations';
-import { getApprovalHistory, approveDeclaration, rejectDeclaration } from '../api/workflow';
+import { getApprovalHistory, approveDeclaration, rejectDeclaration, rollbackDeclaration, getWorkflowInfo } from '../api/workflow';
 import {
   getAttachments, downloadAttachment,
   getMissingCheck, getDuplicates,
   batchDownloadAttachments
 } from '../api/attachments';
-import { StatusMap, StatusColorMap } from '../types';
+import { StatusColorMap } from '../types';
 import type {
   Declaration, ApprovalRecord, Attachment,
-  MissingCheckResult, DuplicatesResult
+  MissingCheckResult, DuplicatesResult, WorkflowInfo, WorkflowConfigStep
 } from '../types';
 
 const { TextArea } = Input;
@@ -36,34 +36,94 @@ function Approval() {
   const [approvalHistory, setApprovalHistory] = useState<ApprovalRecord[]>([]);
   const [approveModalVisible, setApproveModalVisible] = useState(false);
   const [rejectModalVisible, setRejectModalVisible] = useState(false);
+  const [rollbackModalVisible, setRollbackModalVisible] = useState(false);
   const [detailModalVisible, setDetailModalVisible] = useState(false);
-  const [currentRole, setCurrentRole] = useState('initial');
   const [form] = Form.useForm();
+  const [rollbackForm] = Form.useForm();
 
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [missingCheck, setMissingCheck] = useState<MissingCheckResult | null>(null);
   const [duplicatesResult, setDuplicatesResult] = useState<DuplicatesResult | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
 
+  const [workflowInfo, setWorkflowInfo] = useState<WorkflowInfo | null>(null);
+  const [dynamicRoleMap, setDynamicRoleMap] = useState<Record<string, WorkflowConfigStep>>({});
+
+  const loadDynamicRoles = async () => {
+    try {
+      const allRes = await getDeclarations();
+      if (allRes.success && allRes.data) {
+        const roleMap: Record<string, WorkflowConfigStep> = {};
+        for (const decl of allRes.data) {
+          if (decl.status && ['submitted', 'first_reviewed', 'second_reviewed', 'reviewing'].includes(decl.status)) {
+            try {
+              const infoRes = await getWorkflowInfo(decl.id);
+              if (infoRes.success && infoRes.data?.steps) {
+                for (const step of infoRes.data.steps) {
+                  if (step.pending_status) {
+                    roleMap[step.pending_status] = step;
+                  }
+                }
+              }
+            } catch { }
+          }
+        }
+        setDynamicRoleMap(roleMap);
+      }
+    } catch { }
+  };
+
   useEffect(() => {
     loadData();
-  }, [currentRole]);
+    loadDynamicRoles();
+  }, []);
+
+  const getRoleForStatus = (status: string): { key: string; label: string } => {
+    const mapping: Record<string, { key: string; label: string }> = {
+      'submitted': { key: 'initial', label: '初审员' },
+      'first_reviewed': { key: 'review', label: '复审员' },
+      'second_reviewed': { key: 'final', label: '终审员' },
+      'expert_reviewed': { key: 'expert', label: '评审专家' },
+      'formal_reviewed': { key: 'formal', label: '审查员' },
+      'public_reviewed': { key: 'public', label: '公示专员' },
+    };
+
+    if (dynamicRoleMap[status]) {
+      return { key: dynamicRoleMap[status].step_key, label: dynamicRoleMap[status].role };
+    }
+    return mapping[status] || { key: status, label: status };
+  };
+
+  const groupPendingByRole = () => {
+    const groups: Record<string, { role: string; roleKey: string; items: Declaration[] }> = {};
+
+    for (const decl of pendingList) {
+      if (decl.status === 'draft' || decl.status === 'approved' || decl.status === 'rejected') continue;
+      const { key, label } = getRoleForStatus(decl.status);
+      if (!groups[key]) {
+        groups[key] = { role: label, roleKey: key, items: [] };
+      }
+      groups[key].items.push(decl);
+    }
+    return groups;
+  };
+
+  const [selectedRoleKey, setSelectedRoleKey] = useState<string>('');
 
   const loadData = async () => {
     setLoading(true);
     try {
-      const pendingStatuses = currentRole === 'initial'
-        ? 'submitted'
-        : currentRole === 'review'
-          ? 'first_reviewed'
-          : 'second_reviewed';
-
       const [pendingRes, allRes] = await Promise.all([
-        getDeclarations({ status: pendingStatuses }),
+        getDeclarations({ status: undefined }),
         getDeclarations()
       ]);
 
-      if (pendingRes.success) setPendingList(pendingRes.data || []);
+      if (pendingRes.success) {
+        const pending = (pendingRes.data || []).filter(
+          (d: Declaration) => !['draft', 'approved', 'rejected'].includes(d.status) && !d.is_deleted
+        );
+        setPendingList(pending);
+      }
       if (allRes.success) setAllList(allRes.data || []);
     } catch (error) {
       message.error('加载数据失败');
@@ -78,22 +138,25 @@ function Approval() {
     setAttachments([]);
     setMissingCheck(null);
     setDuplicatesResult(null);
+    setWorkflowInfo(null);
 
     try {
-      const [histRes, attRes, missRes, dupRes] = await Promise.all([
+      const [histRes, attRes, missRes, dupRes, wfRes] = await Promise.all([
         getApprovalHistory(record.id),
         getAttachments(record.id),
         getMissingCheck(record.id),
-        getDuplicates(record.id)
+        getDuplicates(record.id),
+        getWorkflowInfo(record.id)
       ]).catch(err => {
         console.error('部分加载失败:', err);
-        return [null, null, null, null] as const;
+        return [null, null, null, null, null] as const;
       });
 
       if (histRes?.success) setApprovalHistory(histRes.data || []);
       if (attRes?.success) setAttachments(attRes.data || []);
       if (missRes?.success) setMissingCheck(missRes.data || null);
       if (dupRes?.success) setDuplicatesResult(dupRes.data || null);
+      if (wfRes?.success) setWorkflowInfo(wfRes.data || null);
     } catch (error) {
       console.error('加载详情失败:', error);
     }
@@ -103,8 +166,9 @@ function Approval() {
   const handleApprove = (record: Declaration) => {
     setSelectedDeclaration(record);
     form.resetFields();
+    const roleInfo = getRoleForStatus(record.status);
     form.setFieldsValue({
-      approver: currentRole === 'initial' ? '初审员' : currentRole === 'review' ? '复审员' : '终审员',
+      approver: roleInfo.label,
       comment: ''
     });
     setApproveModalVisible(true);
@@ -113,11 +177,23 @@ function Approval() {
   const handleReject = (record: Declaration) => {
     setSelectedDeclaration(record);
     form.resetFields();
+    const roleInfo = getRoleForStatus(record.status);
     form.setFieldsValue({
-      approver: currentRole === 'initial' ? '初审员' : currentRole === 'review' ? '复审员' : '终审员',
+      approver: roleInfo.label,
       comment: ''
     });
     setRejectModalVisible(true);
+  };
+
+  const handleRollback = (record: Declaration) => {
+    setSelectedDeclaration(record);
+    rollbackForm.resetFields();
+    const roleInfo = getRoleForStatus(record.status);
+    rollbackForm.setFieldsValue({
+      approver: roleInfo.label,
+      comment: ''
+    });
+    setRollbackModalVisible(true);
   };
 
   const submitApprove = async () => {
@@ -150,6 +226,21 @@ function Approval() {
     }
   };
 
+  const submitRollback = async () => {
+    if (!selectedDeclaration) return;
+    try {
+      const values = await rollbackForm.validateFields();
+      const res = await rollbackDeclaration(selectedDeclaration.id, values);
+      if (res.success) {
+        message.success(res.message || '已退回');
+        setRollbackModalVisible(false);
+        loadData();
+      }
+    } catch (error: any) {
+      message.error(error.response?.data?.message || '退回失败');
+    }
+  };
+
   const handleBatchDownload = () => {
     if (!selectedDeclaration) return;
     if (attachments.length === 0) {
@@ -177,6 +268,23 @@ function Approval() {
     if (['jpg', 'jpeg', 'png'].includes(ext)) return '🖼️';
     if (['zip', 'rar'].includes(ext)) return '🗜️';
     return '📎';
+  };
+
+  const getStatusLabel = (status: string): string => {
+    const roleInfo = getRoleForStatus(status);
+    if (dynamicRoleMap[status]) {
+      return `待${dynamicRoleMap[status].name}`;
+    }
+    const map: Record<string, string> = {
+      draft: '草稿',
+      submitted: '待初审',
+      reviewing: '初审中',
+      first_reviewed: '待复审',
+      second_reviewed: '待终审',
+      approved: '已立项',
+      rejected: '已驳回'
+    };
+    return map[status] || `待${roleInfo.label}审批`;
   };
 
   const AttachmentsPreviewCard = () => {
@@ -397,166 +505,16 @@ function Approval() {
             style={{ padding: '24px 0' }}
           />
         )}
-
-        {missingCheck && missingCheck.missing.length > 0 && (
-          <>
-            <Divider orientation="left" plain style={{ margin: '16px 0 12px' }}>
-              <Space>
-                <FileSearchOutlined style={{ color: '#faad14' }} />
-                缺失的必填材料 ({missingCheck.missing.length})
-              </Space>
-            </Divider>
-            <Row gutter={[8, 8]}>
-              {missingCheck.missing.map(m => (
-                <Col key={m.id} span={12}>
-                  <div style={{
-                    padding: '8px 12px',
-                    background: '#fff1f0',
-                    border: '1px solid #ffa39e',
-                    borderRadius: 4,
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 8
-                  }}>
-                    <WarningOutlined style={{ color: '#ff4d4f' }} />
-                    <span style={{ color: '#cf1322', fontWeight: 500 }}>
-                      *{m.name}
-                    </span>
-                    {m.description && (
-                      <Tooltip title={m.description}>
-                        <span style={{ color: '#999', fontSize: 12, cursor: 'help' }}>ⓘ</span>
-                      </Tooltip>
-                    )}
-                  </div>
-                </Col>
-              ))}
-            </Row>
-          </>
-        )}
-
-        {missingCheck && missingCheck.complete.length > 0 && (
-          <>
-            <Divider orientation="left" plain style={{ margin: '16px 0 12px' }}>
-              <Space>
-                <FileDoneOutlined style={{ color: '#52c41a' }} />
-                已提交的材料 ({missingCheck.complete.length})
-              </Space>
-            </Divider>
-            <Row gutter={[8, 8]}>
-              {missingCheck.complete.map(m => (
-                <Col key={m.id} span={12}>
-                  <div style={{
-                    padding: '8px 12px',
-                    background: '#f6ffed',
-                    border: '1px solid #b7eb8f',
-                    borderRadius: 4,
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 8
-                  }}>
-                    <CheckOutlined style={{ color: '#52c41a' }} />
-                    <span style={{ color: '#389e0d', fontWeight: 500 }}>
-                      {m.required && <span style={{ color: '#ff4d4f' }}>*</span>}
-                      {m.name}
-                    </span>
-                    <span style={{ color: '#52c41a', fontSize: 12 }}>
-                      ({m.uploaded}份)
-                    </span>
-                  </div>
-                </Col>
-              ))}
-            </Row>
-          </>
-        )}
-
-        {duplicatesResult && duplicatesResult.exact_duplicates.groups.length > 0 && (
-          <>
-            <Divider orientation="left" plain style={{ margin: '16px 0 12px' }}>
-              <Space>
-                <WarningOutlined style={{ color: '#fa8c16' }} />
-                重复文件 ({duplicatesResult.exact_duplicates.group_count} 组)
-              </Space>
-            </Divider>
-            <Alert
-              type="warning"
-              showIcon
-              message="以下文件内容完全相同，建议检查是否需要清理"
-              style={{ marginBottom: 8 }}
-            />
-            {duplicatesResult.exact_duplicates.groups.slice(0, 3).map((group, gi) => (
-              <div key={gi} style={{ marginBottom: 8 }}>
-                <div style={{ fontSize: 12, color: '#666', marginBottom: 4 }}>
-                  第 {gi + 1} 组（{group.length} 个文件）
-                </div>
-                <List
-                  size="small"
-                  bordered
-                  dataSource={group}
-                  renderItem={att => (
-                    <List.Item style={{ padding: '4px 12px' }}>
-                      <span style={{ fontSize: 14 }}>
-                        {getFileIcon(att.original_name.split('.').pop()?.toLowerCase() || '')}
-                      </span>
-                      <span style={{ marginLeft: 8, fontSize: 13 }}>
-                        {att.original_name}
-                      </span>
-                      <span style={{ marginLeft: 'auto', color: '#999', fontSize: 12 }}>
-                        {formatFileSize(att.file_size)}
-                      </span>
-                    </List.Item>
-                  )}
-                />
-              </div>
-            ))}
-            {duplicatesResult.exact_duplicates.group_count > 3 && (
-              <div style={{ textAlign: 'center', color: '#999', fontSize: 12 }}>
-                还有 {duplicatesResult.exact_duplicates.group_count - 3} 组重复文件...
-              </div>
-            )}
-          </>
-        )}
       </div>
     );
   };
 
-  const attachmentsSummary = (record: Declaration) => {
-    const QuickPreviewCard = (
-      <div style={{ width: 320 }}>
-        <div style={{
-          marginBottom: 8,
-          paddingBottom: 8,
-          borderBottom: '1px solid #f0f0f0',
-          fontWeight: 500
-        }}>
-          <Space>
-            <PaperClipOutlined />
-            材料检查摘要
-          </Space>
-        </div>
-        <div style={{ fontSize: 12, color: '#666' }}>
-          点击"详情"查看完整附件列表和检查结果
-        </div>
-      </div>
-    );
+  const roleGroups = useMemo(() => groupPendingByRole(), [pendingList, dynamicRoleMap]);
+  const roleKeys = Object.keys(roleGroups);
 
-    return (
-      <Popover
-        content={QuickPreviewCard}
-        title={null}
-        trigger="hover"
-        placement="topLeft"
-      >
-        <Button
-          type="link"
-          icon={<PaperClipOutlined />}
-          size="small"
-          style={{ padding: 0 }}
-        >
-          附件
-        </Button>
-      </Popover>
-    );
-  };
+  const currentRolePending = selectedRoleKey && roleGroups[selectedRoleKey]
+    ? roleGroups[selectedRoleKey].items
+    : pendingList;
 
   const pendingColumns = useMemo(() => [
     {
@@ -587,12 +545,21 @@ function Approval() {
       title: '当前状态',
       dataIndex: 'status',
       key: 'status',
-      width: 90,
+      width: 120,
       render: (text: string) => (
-        <Tag color={StatusColorMap[text as keyof typeof StatusColorMap]}>
-          {StatusMap[text]}
+        <Tag color={StatusColorMap[text as keyof typeof StatusColorMap] || 'blue'}>
+          {getStatusLabel(text)}
         </Tag>
       )
+    },
+    {
+      title: '审批流',
+      key: 'workflow',
+      width: 100,
+      render: (_: any, record: Declaration) => {
+        const roleInfo = getRoleForStatus(record.status);
+        return <Tag color="purple">{roleInfo.label}</Tag>;
+      }
     },
     {
       title: '提交时间',
@@ -604,14 +571,11 @@ function Approval() {
     {
       title: '操作',
       key: 'action',
-      width: 240,
+      width: 280,
       render: (_: any, record: Declaration) => (
         <Space size="small" split={<Divider type="vertical" />}>
           <Button type="link" icon={<EyeOutlined />} onClick={() => handleViewDetail(record)}>
             详情
-          </Button>
-          <Button type="link" icon={<PaperClipOutlined />} onClick={() => handleViewDetail(record)}>
-            预览附件
           </Button>
           <Button type="link" icon={<CheckOutlined />} onClick={() => handleApprove(record)}>
             通过
@@ -619,10 +583,13 @@ function Approval() {
           <Button type="link" danger icon={<CloseOutlined />} onClick={() => handleReject(record)}>
             驳回
           </Button>
+          <Button type="link" icon={<RollbackOutlined />} onClick={() => handleRollback(record)}>
+            退回
+          </Button>
         </Space>
       )
     }
-  ], [currentRole]);
+  ], [dynamicRoleMap]);
 
   const allColumns = useMemo(() => [
     {
@@ -653,10 +620,10 @@ function Approval() {
       title: '状态',
       dataIndex: 'status',
       key: 'status',
-      width: 90,
+      width: 120,
       render: (text: string) => (
-        <Tag color={StatusColorMap[text as keyof typeof StatusColorMap]}>
-          {StatusMap[text]}
+        <Tag color={StatusColorMap[text as keyof typeof StatusColorMap] || 'blue'}>
+          {getStatusLabel(text)}
         </Tag>
       )
     },
@@ -688,18 +655,6 @@ function Approval() {
     <div>
       <div className="page-header">
         <h2 className="page-title">后台审批</h2>
-        <div>
-          <span style={{ marginRight: 12 }}>当前角色：</span>
-          <Select
-            value={currentRole}
-            onChange={setCurrentRole}
-            style={{ width: 150 }}
-          >
-            <Option value="initial">初审员</Option>
-            <Option value="review">复审员</Option>
-            <Option value="final">终审员</Option>
-          </Select>
-        </div>
       </div>
 
       <Card>
@@ -717,9 +672,26 @@ function Approval() {
             }
             key="pending"
           >
+            {roleKeys.length > 0 && (
+              <div style={{ marginBottom: 16, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                <Radio.Group
+                  value={selectedRoleKey}
+                  onChange={e => setSelectedRoleKey(e.target.value)}
+                  optionType="button"
+                  buttonStyle="solid"
+                >
+                  <Radio.Button value="">全部 ({pendingList.length})</Radio.Button>
+                  {roleKeys.map(key => (
+                    <Radio.Button key={key} value={key}>
+                      {roleGroups[key].role} ({roleGroups[key].items.length})
+                    </Radio.Button>
+                  ))}
+                </Radio.Group>
+              </div>
+            )}
             <Table
               columns={pendingColumns}
-              dataSource={pendingList}
+              dataSource={currentRolePending}
               rowKey="id"
               loading={loading}
               pagination={{ pageSize: 10 }}
@@ -742,8 +714,18 @@ function Approval() {
         open={detailModalVisible}
         onCancel={() => setDetailModalVisible(false)}
         footer={[
-          selectedDeclaration && ['submitted', 'first_reviewed', 'second_reviewed'].includes(selectedDeclaration.status) ? (
+          selectedDeclaration && !['draft', 'approved', 'rejected'].includes(selectedDeclaration.status) ? (
             <Space key="actions">
+              <Button
+                icon={<RollbackOutlined />}
+                onClick={() => {
+                  if (selectedDeclaration) {
+                    handleRollback(selectedDeclaration);
+                  }
+                }}
+              >
+                退回
+              </Button>
               <Button
                 danger
                 icon={<CloseOutlined />}
@@ -793,10 +775,30 @@ function Approval() {
                 <p><strong>联系电话：</strong>{selectedDeclaration.phone || '-'}</p>
                 <p><strong>电子邮箱：</strong>{selectedDeclaration.email || '-'}</p>
                 <p><strong>当前状态：</strong>
-                  <Tag color={StatusColorMap[selectedDeclaration.status as keyof typeof StatusColorMap]}>
-                    {StatusMap[selectedDeclaration.status]}
+                  <Tag color={StatusColorMap[selectedDeclaration.status as keyof typeof StatusColorMap] || 'blue'}>
+                    {getStatusLabel(selectedDeclaration.status)}
                   </Tag>
                 </p>
+
+                {workflowInfo && workflowInfo.steps.length > 0 && (
+                  <div style={{ marginTop: 16 }}>
+                    <strong>审批流程：{workflowInfo.config.name}</strong>
+                    <Steps
+                      size="small"
+                      current={workflowInfo.current_step ? workflowInfo.steps.findIndex(s => s.step_order === workflowInfo.current_step!.step_order) : -1}
+                      items={[
+                        { title: '草稿', description: '申请人' },
+                        ...workflowInfo.steps.map(s => ({
+                          title: s.name,
+                          description: s.role
+                        })),
+                        { title: '已立项', description: '' }
+                      ]}
+                      style={{ marginTop: 12, padding: '0 8px' }}
+                    />
+                  </div>
+                )}
+
                 <div style={{ marginTop: 16 }}>
                   <strong>项目内容：</strong>
                   <div style={{
@@ -890,6 +892,19 @@ function Approval() {
           >
             <TextArea rows={4} placeholder="请输入审批意见（可选）" />
           </Form.Item>
+          {workflowInfo?.current_step && (
+            <Alert
+              type="info"
+              showIcon
+              message={`当前步骤：${workflowInfo.current_step.name}（${workflowInfo.current_step.role}）`}
+              description={
+                workflowInfo.current_step.approved_status === 'approved'
+                  ? '通过后将直接立项'
+                  : `通过后将流转至下一审批环节`
+              }
+              style={{ marginTop: 8 }}
+            />
+          )}
         </Form>
       </Modal>
 
@@ -924,6 +939,58 @@ function Approval() {
           >
             <TextArea rows={4} placeholder="请输入驳回原因" />
           </Form.Item>
+        </Form>
+      </Modal>
+
+      <Modal
+        title="退回申报"
+        open={rollbackModalVisible}
+        onOk={submitRollback}
+        onCancel={() => setRollbackModalVisible(false)}
+        destroyOnClose
+      >
+        <Form form={rollbackForm} layout="vertical">
+          <Form.Item
+            name="approver"
+            label="审批人"
+            rules={[{ required: true, message: '请输入审批人姓名' }]}
+          >
+            <Input placeholder="请输入审批人姓名" />
+          </Form.Item>
+          <Form.Item
+            name="target_step"
+            label="退回至"
+            rules={[{ required: true, message: '请选择退回目标' }]}
+          >
+            <Select placeholder="选择退回目标节点">
+              {workflowInfo?.rollback_options?.map(opt => (
+                <Option key={opt.step_order} value={opt.step_order}>
+                  {opt.name}（步骤{opt.step_order}）
+                </Option>
+              )) || (
+                <>
+                  <Option value={0}>草稿（退回至申请人修改）</Option>
+                  <Option value={1}>初审（退回至初审步骤）</Option>
+                </>
+              )}
+            </Select>
+          </Form.Item>
+          <Form.Item
+            name="comment"
+            label="退回原因"
+            rules={[{ required: true, message: '请输入退回原因' }]}
+          >
+            <TextArea rows={4} placeholder="请输入退回原因" />
+          </Form.Item>
+          {workflowInfo?.current_step && (
+            <Alert
+              type="warning"
+              showIcon
+              message={`当前步骤：${workflowInfo.current_step.name}`}
+              description="退回后，申报将回到目标步骤重新审批"
+              style={{ marginTop: 8 }}
+            />
+          )}
         </Form>
       </Modal>
     </div>
