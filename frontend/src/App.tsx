@@ -1,5 +1,5 @@
 import { Routes, Route, useNavigate, useLocation } from 'react-router-dom';
-import { Layout, Menu, theme } from 'antd';
+import { Layout, Menu, theme, Badge } from 'antd';
 import {
   FileTextOutlined,
   FormOutlined,
@@ -7,7 +7,8 @@ import {
   SwapOutlined,
   CheckCircleOutlined,
   ExceptionOutlined,
-  DashboardOutlined
+  DashboardOutlined,
+  DeleteFilled
 } from '@ant-design/icons';
 import Guidelines from './pages/Guidelines';
 import DeclarationForm from './pages/DeclarationForm';
@@ -18,6 +19,7 @@ import WorkflowDemo from './pages/WorkflowDemo';
 import Approval from './pages/Approval';
 import Logs from './pages/Logs';
 import Dashboard from './pages/Dashboard';
+import RecycleBin from './pages/RecycleBin';
 
 const { Header, Sider, Content } = Layout;
 
@@ -36,6 +38,11 @@ const menuItems = [
     key: '/declarations',
     icon: <FormOutlined />,
     label: '申报管理',
+  },
+  {
+    key: '/recycle-bin',
+    icon: <DeleteFilled />,
+    label: '回收站',
   },
   {
     key: '/attachments',
@@ -112,6 +119,7 @@ function App() {
               <Route path="/declarations/new" element={<DeclarationForm />} />
               <Route path="/declarations/:id/edit" element={<DeclarationForm />} />
               <Route path="/declarations/:id" element={<DeclarationDetail />} />
+              <Route path="/recycle-bin" element={<RecycleBin />} />
               <Route path="/attachments" element={<AttachmentDemo />} />
               <Route path="/workflow" element={<WorkflowDemo />} />
               <Route path="/approval" element={<Approval />} />

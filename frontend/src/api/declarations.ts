@@ -1,7 +1,12 @@
 import api from './request';
-import type { Declaration, ApiResponse } from '../types';
+import type { Declaration, ApiResponse, DeclarationStats } from '../types';
 
-export const getDeclarations = (params?: { status?: string; keyword?: string; applicant?: string }) => {
+export const getDeclarations = (params?: {
+  status?: string;
+  keyword?: string;
+  applicant?: string;
+  include_deleted?: boolean;
+}) => {
   return api.get<any, ApiResponse<Declaration[]>>('/declarations', { params });
 };
 
@@ -10,11 +15,21 @@ export const getDeclaration = (id: number) => {
 };
 
 export const createDeclaration = (data: Partial<Declaration>) => {
-  return api.post<any, ApiResponse<{ id: number; status: string }>>('/declarations', data);
+  return api.post<any, ApiResponse<{ id: number; status: string; version_number: number }>>('/declarations', data);
 };
 
-export const updateDeclaration = (id: number, data: Partial<Declaration>) => {
-  return api.put<any, ApiResponse<void>>(`/declarations/${id}`, data);
+export const updateDeclaration = (
+  id: number,
+  data: Partial<Declaration> & { change_note?: string }
+) => {
+  return api.put<
+    any,
+    ApiResponse<{
+      version_number: number;
+      changed_fields: string[];
+      skipped?: boolean;
+    }>
+  >(`/declarations/${id}`, data);
 };
 
 export const submitDeclaration = (id: number) => {
@@ -23,4 +38,18 @@ export const submitDeclaration = (id: number) => {
 
 export const deleteDeclaration = (id: number) => {
   return api.delete<any, ApiResponse<void>>(`/declarations/${id}`);
+};
+
+export const getDeclarationStats = () => {
+  return api.get<any, ApiResponse<DeclarationStats>>('/declarations/stats');
+};
+
+export const restoreDeclaration = (
+  id: number,
+  data?: { restore_note?: string }
+) => {
+  return api.post<any, ApiResponse<{ status: string }>>(
+    `/declarations/${id}/restore`,
+    data || {}
+  );
 };

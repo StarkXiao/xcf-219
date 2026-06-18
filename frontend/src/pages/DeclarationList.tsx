@@ -1,11 +1,14 @@
 import { useEffect, useState } from 'react';
-import { Table, Button, Space, Input, Select, Modal, message, Tag } from 'antd';
-import { PlusOutlined, SearchOutlined, EyeOutlined, EditOutlined, DeleteOutlined, SendOutlined } from '@ant-design/icons';
+import { Table, Button, Space, Input, Select, Modal, message, Tag, Tooltip, Badge } from 'antd';
+import {
+  PlusOutlined, SearchOutlined, EyeOutlined, EditOutlined, DeleteOutlined,
+  SendOutlined, DeleteFilled, HistoryOutlined
+} from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import dayjs from 'dayjs';
-import { getDeclarations, deleteDeclaration, submitDeclaration } from '../api/declarations';
+import { getDeclarations, deleteDeclaration, submitDeclaration, getDeclarationStats } from '../api/declarations';
 import { StatusMap, StatusColorMap } from '../types';
-import type { Declaration } from '../types';
+import type { Declaration, DeclarationStats } from '../types';
 
 const { Option } = Select;
 
@@ -15,10 +18,19 @@ function DeclarationList() {
   const [loading, setLoading] = useState(false);
   const [keyword, setKeyword] = useState('');
   const [status, setStatus] = useState<string | undefined>();
+  const [stats, setStats] = useState<DeclarationStats | null>(null);
 
   useEffect(() => {
     loadDeclarations();
+    loadStats();
   }, []);
+
+  const loadStats = async () => {
+    try {
+      const res = await getDeclarationStats();
+      if (res.success) setStats(res.data);
+    } catch (e) {}
+  };
 
   const loadDeclarations = async () => {
     setLoading(true);
@@ -69,14 +81,26 @@ function DeclarationList() {
 
   const handleDelete = (record: Declaration) => {
     Modal.confirm({
-      title: '确认删除',
-      content: `确定要删除"${record.title}"吗？`,
+      title: '删除申报',
+      icon: <DeleteOutlined style={{ color: '#faad14' }} />,
+      content: (
+        <div>
+          <p>确定要删除 <strong>"{record.title}"</strong> 吗？</p>
+          <div style={{ fontSize: 12, color: '#666', marginTop: 8, padding: 8, background: '#fffbe6', borderRadius: 4 }}>
+            <strong>💡 提示：</strong>删除后将移至回收站，30天内可恢复。超过30天将自动永久删除。
+            {record.version_count ? ` 将同时保留 ${record.version_count} 个历史版本。` : ''}
+          </div>
+        </div>
+      ),
+      okText: '移至回收站',
+      okButtonProps: { danger: true },
       onOk: async () => {
         try {
           const res = await deleteDeclaration(record.id);
           if (res.success) {
-            message.success('删除成功');
+            message.success('已移至回收站，可在回收站中恢复');
             loadDeclarations();
+            loadStats();
           }
         } catch (error: any) {
           message.error(error.response?.data?.message || '删除失败');
@@ -169,10 +193,34 @@ function DeclarationList() {
   return (
     <div>
       <div className="page-header">
-        <h2 className="page-title">申报管理</h2>
-        <Button type="primary" icon={<PlusOutlined />} onClick={handleAdd}>
-          新建申报
-        </Button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <h2 className="page-title" style={{ margin: 0 }}>申报管理</h2>
+          {stats && (
+            <Space size="small" wrap>
+              <Tag color="blue">总数: {stats.total}</Tag>
+              <Tag color="default">草稿: {stats.draft}</Tag>
+              <Tag color="purple">审批中: {stats.in_progress}</Tag>
+              <Tag color="green">已立项: {stats.approved}</Tag>
+              <Tag color="red">已驳回: {stats.rejected}</Tag>
+            </Space>
+          )}
+        </div>
+        <Space>
+          <Tooltip title="查看误删的申报，可恢复或永久删除">
+            <Badge count={stats?.deleted || 0} size="small" offset={[-4, 4]}>
+              <Button
+                icon={<DeleteFilled />}
+                onClick={() => navigate('/recycle-bin')}
+                danger={!!(stats?.deleted && stats.deleted > 0)}
+              >
+                回收站
+              </Button>
+            </Badge>
+          </Tooltip>
+          <Button type="primary" icon={<PlusOutlined />} onClick={handleAdd}>
+            新建申报
+          </Button>
+        </Space>
       </div>
 
       <div className="filter-bar">

@@ -55,8 +55,39 @@ function initDatabase() {
       current_step INTEGER DEFAULT 0,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      is_deleted INTEGER DEFAULT 0,
+      deleted_at DATETIME,
+      deleted_by TEXT,
+      last_auto_save_at DATETIME,
+      version_count INTEGER DEFAULT 0,
       FOREIGN KEY (guideline_id) REFERENCES guidelines(id)
     );
+
+    CREATE TABLE IF NOT EXISTS declaration_versions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      declaration_id INTEGER NOT NULL,
+      version_number INTEGER NOT NULL,
+      title TEXT NOT NULL,
+      guideline_id INTEGER,
+      applicant TEXT NOT NULL,
+      company TEXT NOT NULL,
+      phone TEXT,
+      email TEXT,
+      content TEXT,
+      status TEXT DEFAULT 'draft',
+      current_step INTEGER DEFAULT 0,
+      save_type TEXT DEFAULT 'manual',
+      change_summary TEXT,
+      created_by TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      snapshot_json TEXT,
+      FOREIGN KEY (declaration_id) REFERENCES declarations(id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_declaration_versions_declaration_id 
+      ON declaration_versions(declaration_id);
+    CREATE INDEX IF NOT EXISTS idx_declaration_versions_version 
+      ON declaration_versions(declaration_id, version_number DESC);
 
     CREATE TABLE IF NOT EXISTS attachments (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -89,6 +120,11 @@ function initDatabase() {
       target_id INTEGER,
       detail TEXT,
       ip TEXT,
+      user_agent TEXT,
+      before_data TEXT,
+      after_data TEXT,
+      changed_fields TEXT,
+      version_number INTEGER,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
 

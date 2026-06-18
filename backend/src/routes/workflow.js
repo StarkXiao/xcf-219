@@ -1,7 +1,12 @@
 const express = require('express');
 const router = express.Router();
 const { get, all, run } = require('../models/database');
-const { logOperation } = require('../middleware/logger');
+const { logOperation, logOperationWithData } = require('../middleware/logger');
+const { saveVersion, SAVE_TYPES } = require('./versions');
+
+function getCurrentUser(req) {
+  return req.headers['x-user'] || 'anonymous';
+}
 
 router.get('/steps', (req, res) => {
   try {
@@ -45,8 +50,9 @@ router.post('/declaration/:declarationId/approve', (req, res) => {
   try {
     const { approver, comment, step } = req.body;
     const declarationId = req.params.declarationId;
+    const user = getCurrentUser(req);
 
-    const declaration = get('SELECT * FROM declarations WHERE id = ?', [declarationId]);
+    const declaration = get('SELECT * FROM declarations WHERE id = ? AND is_deleted = 0', [declarationId]);
     if (!declaration) {
       return res.status(404).json({ success: false, message: '申报不存在' });
     }
@@ -71,6 +77,8 @@ router.post('/declaration/:declarationId/approve', (req, res) => {
         return res.status(400).json({ success: false, message: '当前状态不允许审批通过' });
     }
 
+    const beforeData = { ...declaration };
+
     run(`
       UPDATE declarations 
       SET status = ?, current_step = ?, updated_at = CURRENT_TIMESTAMP
@@ -82,12 +90,19 @@ router.post('/declaration/:declarationId/approve', (req, res) => {
       VALUES (?, ?, ?, ?, ?)
     `, [declarationId, step || declaration.current_step, approver || '审批人', '通过', comment || '']);
 
-    logOperation(req, '审批通过', '状态流转', declarationId, `申报: ${declaration.title}, 审批人: ${approver || '审批人'}`);
+    const updated = get('SELECT * FROM declarations WHERE id = ?', [declarationId]);
+    const versionResult = saveVersion(null, declarationId, updated, SAVE_TYPES.STATUS_CHANGE, user,
+      `审批通过: ${declaration.status} -> ${nextStatus}`);
+
+    logOperationWithData(req, '审批通过', '状态流转', declarationId,
+      `申报: ${declaration.title}, 审批人: ${approver || '审批人'}`,
+      beforeData, updated, ['status', 'current_step'], versionResult.version_number);
 
     res.json({ 
       success: true, 
       message: '审批通过',
-      status: nextStatus 
+      status: nextStatus,
+      data: { version_number: versionResult.version_number }
     });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
@@ -98,8 +113,9 @@ router.post('/declaration/:declarationId/reject', (req, res) => {
   try {
     const { approver, comment, step } = req.body;
     const declarationId = req.params.declarationId;
+    const user = getCurrentUser(req);
 
-    const declaration = get('SELECT * FROM declarations WHERE id = ?', [declarationId]);
+    const declaration = get('SELECT * FROM declarations WHERE id = ? AND is_deleted = 0', [declarationId]);
     if (!declaration) {
       return res.status(404).json({ success: false, message: '申报不存在' });
     }
@@ -107,6 +123,8 @@ router.post('/declaration/:declarationId/reject', (req, res) => {
     if (declaration.status === 'draft' || declaration.status === 'approved' || declaration.status === 'rejected') {
       return res.status(400).json({ success: false, message: '当前状态不允许驳回' });
     }
+
+    const beforeData = { ...declaration };
 
     run(`
       UPDATE declarations 
@@ -119,12 +137,19 @@ router.post('/declaration/:declarationId/reject', (req, res) => {
       VALUES (?, ?, ?, ?, ?)
     `, [declarationId, step || declaration.current_step, approver || '审批人', '驳回', comment || '']);
 
-    logOperation(req, '审批驳回', '状态流转', declarationId, `申报: ${declaration.title}, 驳回原因: ${comment || '无'}`);
+    const updated = get('SELECT * FROM declarations WHERE id = ?', [declarationId]);
+    const versionResult = saveVersion(null, declarationId, updated, SAVE_TYPES.STATUS_CHANGE, user,
+      `审批驳回: ${declaration.status} -> rejected`);
+
+    logOperationWithData(req, '审批驳回', '状态流转', declarationId,
+      `申报: ${declaration.title}, 驳回原因: ${comment || '无'}`,
+      beforeData, updated, ['status', 'current_step'], versionResult.version_number);
 
     res.json({ 
       success: true, 
       message: '已驳回',
-      status: 'rejected' 
+      status: 'rejected',
+      data: { version_number: versionResult.version_number }
     });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
@@ -135,8 +160,9 @@ router.post('/declaration/:declarationId/rollback', (req, res) => {
   try {
     const { approver, comment, target_step } = req.body;
     const declarationId = req.params.declarationId;
+    const user = getCurrentUser(req);
 
-    const declaration = get('SELECT * FROM declarations WHERE id = ?', [declarationId]);
+    const declaration = get('SELECT * FROM declarations WHERE id = ? AND is_deleted = 0', [declarationId]);
     if (!declaration) {
       return res.status(404).json({ success: false, message: '申报不存在' });
     }
@@ -159,6 +185,8 @@ router.post('/declaration/:declarationId/rollback', (req, res) => {
       rollbackStep = 2;
     }
 
+    const beforeData = { ...declaration };
+
     run(`
       UPDATE declarations 
       SET status = ?, current_step = ?, updated_at = CURRENT_TIMESTAMP
@@ -170,12 +198,19 @@ router.post('/declaration/:declarationId/rollback', (req, res) => {
       VALUES (?, ?, ?, ?, ?)
     `, [declarationId, declaration.current_step, approver || '审批人', '退回', comment || '']);
 
-    logOperation(req, '审批退回', '状态流转', declarationId, `申报: ${declaration.title}, 退回至步骤: ${rollbackStep}`);
+    const updated = get('SELECT * FROM declarations WHERE id = ?', [declarationId]);
+    const versionResult = saveVersion(null, declarationId, updated, SAVE_TYPES.STATUS_CHANGE, user,
+      `审批退回: ${declaration.status} -> ${rollbackStatus}`);
+
+    logOperationWithData(req, '审批退回', '状态流转', declarationId,
+      `申报: ${declaration.title}, 退回至步骤: ${rollbackStep}`,
+      beforeData, updated, ['status', 'current_step'], versionResult.version_number);
 
     res.json({ 
       success: true, 
       message: '已退回',
-      status: rollbackStatus 
+      status: rollbackStatus,
+      data: { version_number: versionResult.version_number }
     });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });

@@ -9,6 +9,7 @@ const declarationsRouter = require('./routes/declarations');
 const attachmentsRouter = require('./routes/attachments');
 const workflowRouter = require('./routes/workflow');
 const logsRouter = require('./routes/logs');
+const versionsModule = require('./routes/versions');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -29,6 +30,7 @@ app.use('/api/declarations', declarationsRouter);
 app.use('/api/attachments', attachmentsRouter);
 app.use('/api/workflow', workflowRouter);
 app.use('/api/logs', logsRouter);
+app.use('/api/versions', versionsModule.router);
 
 app.use((err, req, res, next) => {
   console.error(err.stack);
