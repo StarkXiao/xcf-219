@@ -71,23 +71,40 @@ export const downloadAttachment = (id: number) => {
   return `/api/attachments/${id}/download`;
 };
 
-export const batchDownloadAttachments = (declarationId: number, attachmentIds?: number[]) => {
-  const form = document.createElement('form');
-  form.method = 'POST';
-  form.action = `/api/attachments/${declarationId}/batch-download`;
-  form.target = '_blank';
+export const batchDownloadAttachments = async (declarationId: number, attachmentIds?: number[]) => {
+  try {
+    const response = await fetch(`/api/attachments/${declarationId}/batch-download`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ attachmentIds: attachmentIds || [] })
+    });
 
-  if (attachmentIds && attachmentIds.length > 0) {
-    const input = document.createElement('input');
-    input.type = 'hidden';
-    input.name = 'attachmentIds';
-    input.value = JSON.stringify(attachmentIds);
-    form.appendChild(input);
+    if (!response.ok) {
+      throw new Error(`下载失败: ${response.statusText}`);
+    }
+
+    const blob = await response.blob();
+    const contentDisposition = response.headers.get('Content-Disposition');
+    let fileName = `attachments_${Date.now()}.zip`;
+    if (contentDisposition) {
+      const match = contentDisposition.match(/filename\*?=(?:UTF-8'')?["']?([^;"'\n]+)/i);
+      if (match) {
+        fileName = decodeURIComponent(match[1]);
+      }
+    }
+
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = fileName;
+    document.body.appendChild(a);
+    a.click();
+    window.URL.revokeObjectURL(url);
+    document.body.removeChild(a);
+  } catch (error) {
+    console.error('批量下载失败:', error);
+    throw error;
   }
-
-  document.body.appendChild(form);
-  form.submit();
-  document.body.removeChild(form);
 };
 
 export const batchDownloadAttachmentsBlob = async (declarationId: number, attachmentIds?: number[]) => {

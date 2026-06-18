@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
-import { Card, Descriptions, Tag, Button, List, Timeline, Modal, Form, Input, Select, message } from 'antd';
-import { ArrowLeftOutlined, DownloadOutlined, CheckOutlined, CloseOutlined, RollbackOutlined } from '@ant-design/icons';
+import { Card, Descriptions, Tag, Button, List, Timeline, Modal, Form, Input, Select, message, Space } from 'antd';
+import { ArrowLeftOutlined, DownloadOutlined, CheckOutlined, CloseOutlined, RollbackOutlined, PaperClipOutlined } from '@ant-design/icons';
 import { useNavigate, useParams } from 'react-router-dom';
 import dayjs from 'dayjs';
 import { getDeclaration } from '../api/declarations';
@@ -192,7 +192,7 @@ function DeclarationDetail() {
         </Descriptions>
       </Card>
 
-      <Card title="附件材料" style={{ marginBottom: 16 }} loading={loading}>
+      <Card title={<Space><PaperClipOutlined />附件材料</Space>} style={{ marginBottom: 16 }} loading={loading}>
         {attachments.length > 0 ? (
           <List
             dataSource={attachments}
@@ -209,7 +209,17 @@ function DeclarationDetail() {
                 ]}
               >
                 <List.Item.Meta
-                  title={item.original_name}
+                  title={
+                    <Space>
+                      {item.original_name}
+                      {item.material_type_name && (
+                        <Tag color={item.material_type_required ? 'red' : 'blue'}>
+                          {item.material_type_required && <span style={{ color: '#ff4d4f' }}>*</span>}
+                          {item.material_type_name}
+                        </Tag>
+                      )}
+                    </Space>
+                  }
                   description={`${formatFileSize(item.file_size)} · 上传于 ${dayjs(item.uploaded_at).format('YYYY-MM-DD HH:mm')}`}
                 />
               </List.Item>

@@ -75,7 +75,7 @@ router.post('/material-types', (req, res) => {
   try {
     const { guideline_id, name, code, description, required, allowed_extensions, max_size, sort_order } = req.body;
 
-    const existing = get('SELECT id FROM material_types WHERE code = ? AND (guideline_id = ? OR (guideline_id IS NULL AND ? IS NULL))', 
+    const existing = get('SELECT id FROM material_types WHERE code = ? AND (guideline_id = ? OR (guideline_id IS NULL AND ? IS NULL))',
       [code, guideline_id || null, guideline_id || null]);
     if (existing) {
       return res.status(400).json({ success: false, message: '材料类型编码已存在' });
@@ -121,8 +121,8 @@ router.put('/material-types/:id', (req, res) => {
       code || existing.code,
       description !== undefined ? description : existing.description,
       required !== undefined ? (required ? 1 : 0) : existing.required,
-      allowed_extensions !== undefined 
-        ? (Array.isArray(allowed_extensions) ? allowed_extensions.join(',') : allowed_extensions) 
+      allowed_extensions !== undefined
+        ? (Array.isArray(allowed_extensions) ? allowed_extensions.join(',') : allowed_extensions)
         : existing.allowed_extensions,
       max_size || existing.max_size,
       sort_order !== undefined ? sort_order : existing.sort_order,
@@ -175,7 +175,7 @@ router.get('/declaration/:declarationId', (req, res) => {
   }
 });
 
-router.post('/validate/:declarationId', async (req, res) => {
+router.post('/validate/:declarationId', (req, res) => {
   try {
     const { files } = req.body;
     const declarationId = req.params.declarationId;
@@ -357,8 +357,8 @@ router.post('/declaration/:declarationId', upload.array('files', 20), async (req
 
     logOperation(req, '上传', '附件', null, `申报ID: ${declarationId}, 上传 ${attachments.length} 个附件, 跳过重复 ${duplicates.length} 个`);
 
-    res.json({ 
-      success: true, 
+    res.json({
+      success: true,
       data: {
         attachments,
         warnings,
@@ -366,7 +366,7 @@ router.post('/declaration/:declarationId', upload.array('files', 20), async (req
         uploadedCount: attachments.length,
         duplicateCount: duplicates.length
       },
-      message: `成功上传 ${attachments.length} 个文件${duplicates.length > 0 ? `，已跳过 ${duplicates.length} 个重复文件` : ''}` 
+      message: `成功上传 ${attachments.length} 个文件${duplicates.length > 0 ? `，已跳过 ${duplicates.length} 个重复文件` : ''}`
     });
   } catch (error) {
     if (req.files) {
@@ -381,6 +381,10 @@ router.post('/declaration/:declarationId', upload.array('files', 20), async (req
 router.get('/:declarationId/missing-check', (req, res) => {
   try {
     const declarationId = req.params.declarationId;
+    const numId = Number(declarationId);
+    if (!Number.isInteger(numId) || numId <= 0) {
+      return res.status(400).json({ success: false, message: '无效的申报ID' });
+    }
 
     const declaration = get('SELECT guideline_id FROM declarations WHERE id = ?', [declarationId]);
     if (!declaration) {
@@ -464,6 +468,10 @@ router.get('/:declarationId/missing-check', (req, res) => {
 router.get('/:declarationId/duplicates', (req, res) => {
   try {
     const declarationId = req.params.declarationId;
+    const numId = Number(declarationId);
+    if (!Number.isInteger(numId) || numId <= 0) {
+      return res.status(400).json({ success: false, message: '无效的申报ID' });
+    }
 
     const declaration = get('SELECT id FROM declarations WHERE id = ?', [declarationId]);
     if (!declaration) {
@@ -543,17 +551,35 @@ router.get('/:id/download', (req, res) => {
   }
 });
 
+function parseAttachmentIds(body) {
+  let { attachmentIds } = body;
+
+  if (typeof attachmentIds === 'string') {
+    try {
+      attachmentIds = JSON.parse(attachmentIds);
+    } catch (e) {
+      attachmentIds = null;
+    }
+  }
+
+  if (!attachmentIds || !Array.isArray(attachmentIds) || attachmentIds.length === 0) {
+    return null;
+  }
+
+  return attachmentIds.map(id => Number(id)).filter(id => Number.isInteger(id) && id > 0);
+}
+
 router.post('/:declarationId/batch-download', (req, res) => {
   try {
     const declarationId = req.params.declarationId;
-    let { attachmentIds } = req.body;
+    let attachmentIds = parseAttachmentIds(req.body);
 
     const declaration = get('SELECT title FROM declarations WHERE id = ?', [declarationId]);
     if (!declaration) {
       return res.status(404).json({ success: false, message: '申报不存在' });
     }
 
-    if (!attachmentIds || !Array.isArray(attachmentIds) || attachmentIds.length === 0) {
+    if (!attachmentIds) {
       const allAttachments = all('SELECT * FROM attachments WHERE declaration_id = ?', [declarationId]);
       attachmentIds = allAttachments.map(a => a.id);
     }
@@ -579,35 +605,26 @@ router.post('/:declarationId/batch-download', (req, res) => {
     }
 
     const archiver = require('archiver');
-    const safeTitle = (declaration.title || '申报材料').replace(/[<>:"/\\|?*]/g, '_');
-    const zipFileName = `${safeTitle}_附件_${Date.now()}.zip`;
+    const safeTitle = (declaration.title || 'declaration').replace(/[<>:"/\\|?*]/g, '_');
+    const zipFileName = `${safeTitle}_attachments_${Date.now()}.zip`;
     const zipFilePath = path.join(tempDir, zipFileName);
 
-    const output = fs.createWriteStream(zipFilePath);
+    res.setHeader('Content-Type', 'application/zip');
+    res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(zipFileName)}"`);
+
     const archive = archiver('zip', { zlib: { level: 9 } });
 
-    output.on('close', () => {
-      logOperation(req, '批量下载', '附件', null, `申报ID: ${declarationId}, 打包下载 ${attachments.length} 个附件, 总大小 ${archive.pointer()} 字节`);
-
-      res.download(zipFilePath, zipFileName, (err) => {
-        setTimeout(() => {
-          if (fs.existsSync(zipFilePath)) {
-            fs.unlinkSync(zipFilePath);
-          }
-        }, 60000);
-      });
-    });
-
     archive.on('error', (err) => {
-      if (fs.existsSync(zipFilePath)) {
-        fs.unlinkSync(zipFilePath);
+      console.error('打包错误:', err);
+      if (!res.headersSent) {
+        res.status(500).json({ success: false, message: '打包失败' });
       }
-      throw err;
     });
 
-    archive.pipe(output);
+    archive.pipe(res);
 
     const nameCount = {};
+    let fileCount = 0;
     for (const att of attachments) {
       if (!fs.existsSync(att.file_path)) {
         continue;
@@ -624,12 +641,25 @@ router.post('/:declarationId/batch-download', (req, res) => {
       }
 
       archive.file(att.file_path, { name: entryName });
+      fileCount++;
     }
+
+    if (fileCount === 0) {
+      archive.abort();
+      if (!res.headersSent) {
+        return res.status(404).json({ success: false, message: '没有可下载的文件' });
+      }
+      return;
+    }
+
+    logOperation(req, '批量下载', '附件', null, `申报ID: ${declarationId}, 打包下载 ${fileCount} 个附件`);
 
     archive.finalize();
   } catch (error) {
     console.error('批量下载失败:', error);
-    res.status(500).json({ success: false, message: error.message });
+    if (!res.headersSent) {
+      res.status(500).json({ success: false, message: error.message });
+    }
   }
 });
 
@@ -659,7 +689,7 @@ router.put('/:id/material-type', (req, res) => {
       req.params.id
     ]);
 
-    logOperation(req, '修改材料类型', '附件', req.params.id, 
+    logOperation(req, '修改材料类型', '附件', req.params.id,
       `设置材料类型: ${material_type_id || '未分类'}`);
 
     res.json({ success: true, message: '更新成功' });

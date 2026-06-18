@@ -30,6 +30,33 @@ function exec(sql) {
   db.exec(sql);
 }
 
+function getColumns(tableName) {
+  return db.prepare(`PRAGMA table_info(${tableName})`).all().map(c => c.name);
+}
+
+function hasColumn(tableName, colName) {
+  return getColumns(tableName).includes(colName);
+}
+
+function safeAddColumn(tableName, colName, colDef) {
+  if (!hasColumn(tableName, colName)) {
+    try {
+      db.exec(`ALTER TABLE ${tableName} ADD COLUMN ${colName} ${colDef}`);
+      console.log(`迁移: ${tableName} 新增 ${colName} 列`);
+    } catch (e) {
+      console.warn(`迁移 ${tableName}.${colName} 跳过: ${e.message}`);
+    }
+  }
+}
+
+function safeCreateIndex(indexName, table, column) {
+  try {
+    db.exec(`CREATE INDEX IF NOT EXISTS ${indexName} ON ${table}(${column})`);
+  } catch (e) {
+    console.warn(`索引 ${indexName} 跳过: ${e.message}`);
+  }
+}
+
 function initDatabase() {
   db.exec(`
     CREATE TABLE IF NOT EXISTS guidelines (
@@ -84,9 +111,9 @@ function initDatabase() {
       FOREIGN KEY (declaration_id) REFERENCES declarations(id)
     );
 
-    CREATE INDEX IF NOT EXISTS idx_declaration_versions_declaration_id 
+    CREATE INDEX IF NOT EXISTS idx_declaration_versions_declaration_id
       ON declaration_versions(declaration_id);
-    CREATE INDEX IF NOT EXISTS idx_declaration_versions_version 
+    CREATE INDEX IF NOT EXISTS idx_declaration_versions_version
       ON declaration_versions(declaration_id, version_number DESC);
 
     CREATE TABLE IF NOT EXISTS material_types (
@@ -106,20 +133,14 @@ function initDatabase() {
     CREATE TABLE IF NOT EXISTS attachments (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       declaration_id INTEGER NOT NULL,
-      material_type_id INTEGER,
       filename TEXT NOT NULL,
       original_name TEXT NOT NULL,
       file_path TEXT NOT NULL,
       file_size INTEGER,
       file_type TEXT,
-      file_hash TEXT,
       uploaded_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY (declaration_id) REFERENCES declarations(id),
-      FOREIGN KEY (material_type_id) REFERENCES material_types(id)
+      FOREIGN KEY (declaration_id) REFERENCES declarations(id)
     );
-
-    CREATE INDEX IF NOT EXISTS idx_attachments_hash ON attachments(file_hash);
-    CREATE INDEX IF NOT EXISTS idx_material_types_guideline ON material_types(guideline_id);
 
     CREATE TABLE IF NOT EXISTS approval_records (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -156,6 +177,11 @@ function initDatabase() {
       role TEXT
     );
   `);
+
+  safeAddColumn('attachments', 'material_type_id', 'INTEGER REFERENCES material_types(id)');
+  safeAddColumn('attachments', 'file_hash', 'TEXT');
+  safeCreateIndex('idx_attachments_hash', 'attachments', 'file_hash');
+  safeCreateIndex('idx_material_types_guideline', 'material_types', 'guideline_id');
 
   const guidelineCount = get('SELECT COUNT(*) as count FROM guidelines');
   if (guidelineCount.count === 0) {
