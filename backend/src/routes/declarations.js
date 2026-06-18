@@ -240,8 +240,8 @@ router.put('/:id', (req, res) => {
       return res.status(404).json({ success: false, message: '申报不存在' });
     }
     
-    if (declaration.status !== 'draft') {
-      return res.status(400).json({ success: false, message: '只能编辑草稿状态的申报' });
+    if (declaration.status !== 'draft' && declaration.status !== 'rejected') {
+      return res.status(400).json({ success: false, message: '只能编辑草稿或已驳回状态的申报' });
     }
 
     const beforeData = { ...declaration };
@@ -1429,6 +1429,159 @@ router.delete('/filters/:id', (req, res) => {
     logOperation(req, '删除筛选方案', '筛选方案', req.params.id, `删除筛选方案: ${existing.name}`);
 
     res.json({ success: true, message: '筛选方案已删除' });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+router.post('/:id/resubmit', (req, res) => {
+  try {
+    const { supplement_note, title, content, applicant, company, phone, email } = req.body;
+    const user = getCurrentUser(req);
+    const declarationId = req.params.id;
+
+    const declaration = get('SELECT * FROM declarations WHERE id = ? AND is_deleted = 0', [declarationId]);
+    if (!declaration) {
+      return res.status(404).json({ success: false, message: '申报不存在' });
+    }
+
+    if (declaration.status !== 'rejected') {
+      return res.status(400).json({ success: false, message: '只有已驳回状态的申报才能进行二次申报' });
+    }
+
+    if (!supplement_note || !supplement_note.trim()) {
+      return res.status(400).json({ success: false, message: '请填写补充说明' });
+    }
+
+    const beforeData = { ...declaration };
+    const newResubmitCount = (declaration.resubmit_count || 0) + 1;
+
+    const updateData = {
+      title: title !== undefined ? title : declaration.title,
+      applicant: applicant !== undefined ? applicant : declaration.applicant,
+      company: company !== undefined ? company : declaration.company,
+      phone: phone !== undefined ? phone : declaration.phone,
+      email: email !== undefined ? email : declaration.email,
+      content: content !== undefined ? content : declaration.content
+    };
+
+    let workflowConfigId = declaration.workflow_config_id;
+    let reReviewStepName = '复审';
+    let reReviewStepRole = '复审员';
+    let reReviewStatus = 'first_reviewed';
+    let reReviewStepOrder = 2;
+
+    if (workflowConfigId || declaration.guideline_id) {
+      const config = getWorkflowConfigForResubmit(declaration);
+      if (config && config.steps.length > 0) {
+        if (config.steps.length >= 2) {
+          const secondStep = config.steps[1];
+          reReviewStepName = secondStep.name;
+          reReviewStepRole = secondStep.role;
+          reReviewStatus = secondStep.pending_status;
+          reReviewStepOrder = secondStep.step_order;
+        } else {
+          const firstStep = config.steps[0];
+          reReviewStepName = firstStep.name;
+          reReviewStepRole = firstStep.role;
+          reReviewStatus = firstStep.pending_status;
+          reReviewStepOrder = firstStep.step_order;
+        }
+      }
+    }
+
+    run(`
+      UPDATE declarations 
+      SET title = ?, applicant = ?, company = ?, phone = ?, email = ?, content = ?,
+          status = ?, current_step = ?, resubmit_count = ?, 
+          last_reject_reason = NULL, last_rejected_at = NULL,
+          updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `, [
+      updateData.title, updateData.applicant, updateData.company,
+      updateData.phone, updateData.email, updateData.content,
+      reReviewStatus, reReviewStepOrder, newResubmitCount,
+      declarationId
+    ]);
+
+    run(`
+      INSERT INTO declaration_resubmissions (declaration_id, resubmit_count, supplement_note, created_by)
+      VALUES (?, ?, ?, ?)
+    `, [declarationId, newResubmitCount, supplement_note.trim(), user]);
+
+    run(`
+      INSERT INTO approval_records (declaration_id, step, step_name, step_role, approver, action, comment)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `, [declarationId, reReviewStepOrder, reReviewStepName, reReviewStepRole, user, '二次申报', `补充说明: ${supplement_note.trim()}`]);
+
+    const updated = get('SELECT * FROM declarations WHERE id = ?', [declarationId]);
+    const versionResult = saveVersion(null, declarationId, updated, SAVE_TYPES.SUBMIT, user,
+      `二次申报(第${newResubmitCount}次), 补充说明: ${supplement_note.trim()}`);
+
+    logOperationWithData(req, '二次申报', '申报表单', declarationId,
+      `第${newResubmitCount}次二次申报: ${declaration.title}, 进入${reReviewStepName}环节`,
+      beforeData, updated, ['status', 'current_step', 'resubmit_count', 'last_reject_reason', 'last_rejected_at'],
+      versionResult.version_number);
+
+    res.json({
+      success: true,
+      message: '二次申报成功，已进入复核流程',
+      data: {
+        id: declarationId,
+        status: reReviewStatus,
+        resubmit_count: newResubmitCount,
+        step_name: reReviewStepName,
+        version_number: versionResult.version_number
+      }
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+function getWorkflowConfigForResubmit(declaration) {
+  if (declaration.workflow_config_id) {
+    const config = get('SELECT * FROM workflow_configs WHERE id = ?', [declaration.workflow_config_id]);
+    if (config) {
+      const steps = all(
+        'SELECT * FROM workflow_config_steps WHERE config_id = ? ORDER BY step_order',
+        [config.id]
+      );
+      return { ...config, steps };
+    }
+  }
+
+  if (declaration.guideline_id) {
+    const config = get('SELECT * FROM workflow_configs WHERE guideline_id = ?', [declaration.guideline_id]);
+    if (config) {
+      const steps = all(
+        'SELECT * FROM workflow_config_steps WHERE config_id = ? ORDER BY step_order',
+        [config.id]
+      );
+      return { ...config, steps };
+    }
+  }
+
+  return null;
+}
+
+router.get('/:id/resubmissions', (req, res) => {
+  try {
+    const declaration = get('SELECT * FROM declarations WHERE id = ?', [req.params.id]);
+    if (!declaration) {
+      return res.status(404).json({ success: false, message: '申报不存在' });
+    }
+
+    const resubmissions = all(`
+      SELECT * FROM declaration_resubmissions 
+      WHERE declaration_id = ? 
+      ORDER BY resubmit_count DESC, created_at DESC
+    `, [req.params.id]);
+
+    logOperation(req, '查看二次申报历史', '申报表单', req.params.id,
+      `查看申报: ${declaration.title} 的二次申报历史，共${resubmissions.length}条`);
+
+    res.json({ success: true, data: resubmissions });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }

@@ -303,9 +303,9 @@ router.post('/declaration/:declarationId/reject', (req, res) => {
 
     run(`
       UPDATE declarations
-      SET status = 'rejected', current_step = 5, updated_at = CURRENT_TIMESTAMP
+      SET status = 'rejected', current_step = 5, last_rejected_at = CURRENT_TIMESTAMP, last_reject_reason = ?, updated_at = CURRENT_TIMESTAMP
       WHERE id = ?
-    `, [declarationId]);
+    `, [comment.trim(), declarationId]);
 
     run(`
       INSERT INTO approval_records (declaration_id, step, step_name, step_role, approver, action, comment, reason_category)

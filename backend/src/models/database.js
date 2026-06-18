@@ -87,6 +87,9 @@ function initDatabase() {
       deleted_by TEXT,
       last_auto_save_at DATETIME,
       version_count INTEGER DEFAULT 0,
+      resubmit_count INTEGER DEFAULT 0,
+      last_rejected_at DATETIME,
+      last_reject_reason TEXT,
       FOREIGN KEY (guideline_id) REFERENCES guidelines(id)
     );
 
@@ -271,6 +274,16 @@ function initDatabase() {
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
+
+    CREATE TABLE IF NOT EXISTS declaration_resubmissions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      declaration_id INTEGER NOT NULL,
+      resubmit_count INTEGER NOT NULL,
+      supplement_note TEXT,
+      created_by TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (declaration_id) REFERENCES declarations(id)
+    );
   `);
 
   safeAddColumn('attachments', 'material_type_id', 'INTEGER REFERENCES material_types(id)');
@@ -285,6 +298,9 @@ function initDatabase() {
   safeAddColumn('workflow_config_steps', 'responsible_person', 'TEXT');
   safeAddColumn('workflow_steps', 'expected_duration', 'INTEGER DEFAULT 0');
   safeAddColumn('workflow_steps', 'responsible_person', 'TEXT');
+  safeAddColumn('declarations', 'resubmit_count', 'INTEGER DEFAULT 0');
+  safeAddColumn('declarations', 'last_rejected_at', 'DATETIME');
+  safeAddColumn('declarations', 'last_reject_reason', 'TEXT');
   safeCreateIndex('idx_attachments_hash', 'attachments', 'file_hash');
   safeCreateIndex('idx_material_types_guideline', 'material_types', 'guideline_id');
   safeCreateIndex('idx_workflow_configs_guideline', 'workflow_configs', 'guideline_id');
@@ -298,6 +314,7 @@ function initDatabase() {
   safeCreateIndex('idx_saved_filters_user', 'saved_filters', 'user');
   safeCreateIndex('idx_enterprise_profiles_name', 'enterprise_profiles', 'company_name');
   safeCreateIndex('idx_enterprise_profiles_applicant', 'enterprise_profiles', 'applicant');
+  safeCreateIndex('idx_declaration_resubmissions_declaration', 'declaration_resubmissions', 'declaration_id');
 
   const guidelineCount = get('SELECT COUNT(*) as count FROM guidelines');
   if (guidelineCount.count === 0) {

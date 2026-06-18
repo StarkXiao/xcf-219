@@ -9,9 +9,10 @@ import {
   SaveOutlined, HistoryOutlined, RollbackOutlined, DiffOutlined, ClockCircleOutlined,
   ThunderboltOutlined, ReloadOutlined, ExclamationCircleOutlined, SafetyOutlined,
   WarningOutlined, CheckCircleOutlined, InfoCircleOutlined, FileTextOutlined,
-  BankOutlined, ScheduleOutlined
+  BankOutlined, ScheduleOutlined, SyncOutlined, CloseCircleOutlined
 } from '@ant-design/icons';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import dayjs from 'dayjs';
 import { getGuidelines, getGuidelineTemplates } from '../api/guidelines';
 import { getDeclaration, createDeclaration, updateDeclaration, submitDeclaration, checkQualification } from '../api/declarations';
 import { getAttachments, uploadAttachments, deleteAttachment, downloadAttachment } from '../api/attachments';
@@ -835,18 +836,27 @@ function DeclarationForm() {
         <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
           <Button icon={<ArrowLeftOutlined />} onClick={() => navigate('/declarations')} />
           <h2 className="page-title" style={{ margin: 0 }}>
-            {isEdit ? '编辑申报' : '新建申报'}
+            {isEdit ? (declaration?.status === 'rejected' ? '修改驳回申报' : '编辑申报') : '新建申报'}
           </h2>
           {declaration && (
             <>
-              <Tag color={declaration.status === 'draft' ? 'default' : 'blue'}>
-                {declaration.status === 'draft' ? '草稿' : '已提交'}
+              <Tag color={
+                declaration.status === 'draft' ? 'default' :
+                declaration.status === 'rejected' ? 'red' : 'blue'
+              }>
+                {declaration.status === 'draft' ? '草稿' :
+                 declaration.status === 'rejected' ? '已驳回' : '已提交'}
               </Tag>
               {versionCount > 0 && (
                 <Tooltip title={`共 ${versionCount} 个历史版本`}>
                   <Tag color="geekblue" icon={<HistoryOutlined />}>v{versionCount}</Tag>
                 </Tooltip>
               )}
+              {declaration.resubmit_count ? (
+                <Tag color="purple" icon={<SyncOutlined />}>
+                  第 {declaration.resubmit_count} 次申报
+                </Tag>
+              ) : null}
             </>
           )}
           {declaration?.status === 'draft' && isEdit && (
@@ -942,6 +952,35 @@ function DeclarationForm() {
         </Card>
       )}
 
+      {declaration?.status === 'rejected' && declaration?.last_reject_reason && (
+        <Alert
+          type="error"
+          showIcon
+          message={
+            <Space>
+              <CloseCircleOutlined />
+              <span>
+                <strong>上次驳回原因</strong>
+                {declaration.last_rejected_at && (
+                  <span style={{ color: '#999', fontSize: 12, marginLeft: 8 }}>
+                    ({dayjs(declaration.last_rejected_at).format('YYYY-MM-DD HH:mm')})
+                  </span>
+                )}
+              </span>
+            </Space>
+          }
+          description={
+            <div>
+              <div style={{ marginBottom: 8 }}>{declaration.last_reject_reason}</div>
+              <div style={{ fontSize: 12, color: '#666' }}>
+                请根据驳回原因修改申报内容或补充附件材料，修改完成后点击"返回详情进行二次申报"，填写补充说明后将直接进入复核流程。
+              </div>
+            </div>
+          }
+          style={{ marginBottom: 16 }}
+        />
+      )}
+
       {autoFillTipVisible && (
         <Alert
           message="企业信息已自动填充"
@@ -959,10 +998,10 @@ function DeclarationForm() {
         <Form form={form} layout="vertical" onValuesChange={handleFormValuesChange}>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
             <Form.Item name="title" label="项目名称" rules={[{ required: true, message: '请输入项目名称' }]}>
-              <Input placeholder="请输入项目名称" disabled={declaration?.status !== 'draft' && isEdit} />
+              <Input placeholder="请输入项目名称" disabled={!['draft', 'rejected'].includes(declaration?.status || '') && isEdit} />
             </Form.Item>
             <Form.Item name="guideline_id" label="申报指南">
-              <Select placeholder="请选择申报指南" allowClear disabled={declaration?.status !== 'draft' && isEdit}>
+              <Select placeholder="请选择申报指南" allowClear disabled={!['draft', 'rejected'].includes(declaration?.status || '') && isEdit}>
                 {guidelines.map(g => <Option key={g.id} value={g.id}>{g.title}</Option>)}
               </Select>
             </Form.Item>
@@ -971,7 +1010,7 @@ function DeclarationForm() {
             <Form.Item name="applicant" label="申请人" rules={[{ required: true, message: '请输入申请人' }]}>
               <Input 
                 placeholder="请输入申请人姓名" 
-                disabled={declaration?.status !== 'draft' && isEdit} 
+                disabled={!['draft', 'rejected'].includes(declaration?.status || '') && isEdit} 
                 suffix={selectedEnterprise?.applicant ? <Tag color="green" style={{ marginRight: -8 }}>自动填充</Tag> : null}
               />
             </Form.Item>
@@ -991,7 +1030,7 @@ function DeclarationForm() {
                 options={enterpriseOptions}
                 onSelect={handleEnterpriseSelect}
                 placeholder="请输入企业名称，支持搜索历史企业"
-                disabled={declaration?.status !== 'draft' && isEdit}
+                disabled={!['draft', 'rejected'].includes(declaration?.status || '') && isEdit}
                 notFoundContent={enterpriseSearchLoading ? '搜索中...' : '暂无匹配企业'}
               >
                 <Input />
@@ -1002,20 +1041,20 @@ function DeclarationForm() {
             <Form.Item name="phone" label="联系电话">
               <Input 
                 placeholder="请输入联系电话" 
-                disabled={declaration?.status !== 'draft' && isEdit}
+                disabled={!['draft', 'rejected'].includes(declaration?.status || '') && isEdit}
                 suffix={selectedEnterprise?.phone ? <Tag color="green" style={{ marginRight: -8 }}>自动填充</Tag> : null}
               />
             </Form.Item>
             <Form.Item name="email" label="电子邮箱">
               <Input 
                 placeholder="请输入电子邮箱" 
-                disabled={declaration?.status !== 'draft' && isEdit}
+                disabled={!['draft', 'rejected'].includes(declaration?.status || '') && isEdit}
                 suffix={selectedEnterprise?.email ? <Tag color="green" style={{ marginRight: -8 }}>自动填充</Tag> : null}
               />
             </Form.Item>
           </div>
           <Form.Item name="content" label="项目内容" rules={[{ required: true, message: '请输入项目内容' }]}>
-            <TextArea rows={8} placeholder="请详细描述项目内容" disabled={declaration?.status !== 'draft' && isEdit} />
+            <TextArea rows={8} placeholder="请详细描述项目内容" disabled={!['draft', 'rejected'].includes(declaration?.status || '') && isEdit} />
           </Form.Item>
         </Form>
       </Card>
@@ -1023,7 +1062,7 @@ function DeclarationForm() {
       <Card title="附件材料" style={{ marginBottom: 16 }}>
         {(isEdit || declaration) && (
           <>
-            <Dragger multiple beforeUpload={beforeUpload} showUploadList={false} disabled={declaration?.status !== 'draft'} style={{ marginBottom: 16 }}>
+            <Dragger multiple beforeUpload={beforeUpload} showUploadList={false} disabled={!['draft', 'rejected'].includes(declaration?.status || '')} style={{ marginBottom: 16 }}>
               <p className="ant-upload-drag-icon"><InboxOutlined /></p>
               <p className="ant-upload-text">点击或拖拽文件到此区域上传</p>
               <p className="ant-upload-hint">支持 PDF、Word、Excel、图片、压缩包等格式，单个文件不超过 10MB</p>
@@ -1035,7 +1074,7 @@ function DeclarationForm() {
                   <List.Item
                     actions={[
                       <Button type="link" icon={<DownloadOutlined />} onClick={() => window.open(downloadAttachment(item.id))}>下载</Button>,
-                      declaration?.status === 'draft' && (
+                      ['draft', 'rejected'].includes(declaration?.status || '') && (
                         <Button type="link" danger icon={<DeleteOutlined />} onClick={() => handleDeleteAttachment(item)}>删除</Button>
                       )
                     ].filter(Boolean)}
@@ -1058,6 +1097,14 @@ function DeclarationForm() {
           <>
             <Button icon={<SaveOutlined />} onClick={handleSave} loading={loading}>保存草稿</Button>
             <Button type="primary" onClick={handleSubmit} loading={loading}>提交申报</Button>
+          </>
+        )}
+        {declaration?.status === 'rejected' && (
+          <>
+            <Button icon={<SaveOutlined />} onClick={handleSave} loading={loading}>保存修改</Button>
+            <Button type="primary" icon={<SyncOutlined />} onClick={() => navigate(`/declarations/${id}`)}>
+              返回详情进行二次申报
+            </Button>
           </>
         )}
       </div>

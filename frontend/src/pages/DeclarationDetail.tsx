@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import {
   Card, Descriptions, Tag, Button, List, Timeline, Modal, Form, Input,
-  Select, message, Space, Tabs, Steps, Table, Tooltip, Badge, Empty, Spin
+  Select, message, Space, Tabs, Steps, Table, Tooltip, Badge, Empty, Spin, Alert
 } from 'antd';
 import {
   ArrowLeftOutlined, DownloadOutlined, CheckOutlined, CloseOutlined,
@@ -14,7 +14,7 @@ import {
 } from '@ant-design/icons';
 import { useNavigate, useParams } from 'react-router-dom';
 import dayjs from 'dayjs';
-import { getDeclaration } from '../api/declarations';
+import { getDeclaration, resubmitDeclaration, getDeclarationResubmissions } from '../api/declarations';
 import {
   getAttachments, downloadAttachment, deleteAttachment,
   getMissingCheck, batchDownloadAttachments
@@ -28,7 +28,7 @@ import { StatusMap, StatusColorMap } from '../types';
 import type {
   Declaration, Attachment, ApprovalRecord,
   OperationTimelineEvent, WorkflowInfo, MissingCheckResult,
-  ApprovalReasonCategory
+  ApprovalReasonCategory, DeclarationResubmission
 } from '../types';
 
 const { TextArea } = Input;
@@ -53,6 +53,8 @@ function DeclarationDetail() {
   const [approveReasonCategories, setApproveReasonCategories] = useState<ApprovalReasonCategory[]>([]);
   const [rejectReasonCategories, setRejectReasonCategories] = useState<ApprovalReasonCategory[]>([]);
   const [rollbackReasonCategories, setRollbackReasonCategories] = useState<ApprovalReasonCategory[]>([]);
+  const [resubmitModalVisible, setResubmitModalVisible] = useState(false);
+  const [resubmissions, setResubmissions] = useState<DeclarationResubmission[]>([]);
 
   const loadReasonCategories = async () => {
     try {
@@ -89,12 +91,13 @@ function DeclarationDetail() {
   const loadData = async (declarationId: number) => {
     setLoading(true);
     try {
-      const [decRes, attRes, histRes, timelineRes, wfRes] = await Promise.all([
+      const [decRes, attRes, histRes, timelineRes, wfRes, resubmitRes] = await Promise.all([
         getDeclaration(declarationId),
         getAttachments(declarationId),
         getApprovalHistory(declarationId),
         getDeclarationTimeline(declarationId),
-        getWorkflowInfo(declarationId)
+        getWorkflowInfo(declarationId),
+        getDeclarationResubmissions(declarationId)
       ]);
 
       if (decRes.success) setDeclaration(decRes.data || null);
@@ -102,6 +105,7 @@ function DeclarationDetail() {
       if (histRes.success) setHistory(histRes.data || []);
       if (timelineRes.success) setTimeline(timelineRes.data?.timeline || []);
       if (wfRes.success) setWorkflowInfo(wfRes.data || null);
+      if (resubmitRes.success) setResubmissions(resubmitRes.data || []);
 
       try {
         const missingRes = await getMissingCheck(declarationId);
@@ -167,6 +171,29 @@ function DeclarationDetail() {
     if (!declaration || !workflowInfo) return false;
     if (['draft', 'approved', 'rejected'].includes(declaration.status)) return false;
     return !!workflowInfo.current_step && workflowInfo.current_step.allow_rollback !== false;
+  };
+
+  const canResubmit = () => {
+    if (!declaration) return false;
+    return declaration.status === 'rejected';
+  };
+
+  const handleResubmit = async () => {
+    try {
+      const values = await form.validateFields();
+      if (!id) return;
+      const res = await resubmitDeclaration(parseInt(id), {
+        supplement_note: values.supplement_note
+      });
+      if (res.success) {
+        message.success(res.message || '二次申报成功');
+        setResubmitModalVisible(false);
+        form.resetFields();
+        loadData(parseInt(id));
+      }
+    } catch (error: any) {
+      message.error(error.response?.data?.message || '操作失败');
+    }
   };
 
   const handleApprove = async () => {
@@ -662,9 +689,22 @@ function DeclarationDetail() {
             <Descriptions.Item label="当前步骤">
               {declaration?.current_step_name || workflowInfo?.current_step?.name || '-'}
             </Descriptions.Item>
+            <Descriptions.Item label="二次申报次数">
+              {declaration?.resubmit_count ? `${declaration.resubmit_count} 次` : '未进行过二次申报'}
+            </Descriptions.Item>
             <Descriptions.Item label="工作流配置">
               {workflowInfo?.config?.name || '默认审批流'}
             </Descriptions.Item>
+            {declaration?.last_reject_reason && (
+              <Descriptions.Item label="上次驳回原因" span={2}>
+                <Alert
+                  type="error"
+                  showIcon
+                  message={`驳回时间：${declaration.last_rejected_at ? dayjs(declaration.last_rejected_at).format('YYYY-MM-DD HH:mm') : '-'}`}
+                  description={declaration.last_reject_reason}
+                />
+              </Descriptions.Item>
+            )}
             <Descriptions.Item label="当前步骤角色">
               {workflowInfo?.current_step?.role || '-'}
             </Descriptions.Item>
@@ -961,6 +1001,53 @@ function DeclarationDetail() {
               </div>
             </div>
           )}
+          {resubmissions.length > 0 && (
+            <Card size="small" title="二次申报历史" style={{ marginBottom: 16, borderRadius: 8 }}>
+              <List
+                size="small"
+                dataSource={resubmissions}
+                renderItem={(item, index) => (
+                  <List.Item
+                    style={{
+                      padding: '12px 0',
+                      borderBottom: index < resubmissions.length - 1 ? '1px solid #f0f0f0' : 'none'
+                    }}
+                  >
+                    <List.Item.Meta
+                      avatar={
+                        <div style={{
+                          width: 36,
+                          height: 36,
+                          borderRadius: '50%',
+                          background: '#e6f4ff',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center'
+                        }}>
+                          <SyncOutlined style={{ color: '#1890ff' }} />
+                        </div>
+                      }
+                      title={
+                        <Space>
+                          <span style={{ fontWeight: 500 }}>第 {item.resubmit_count} 次二次申报</span>
+                          <Tag color="blue">补充说明</Tag>
+                          {item.created_by && <Tag color="geekblue">操作人：{item.created_by}</Tag>}
+                        </Space>
+                      }
+                      description={
+                        <div style={{ fontSize: 13, color: '#666', marginTop: 4 }}>
+                          {item.supplement_note}
+                          <div style={{ color: '#999', fontSize: 12, marginTop: 4 }}>
+                            {dayjs(item.created_at).format('YYYY-MM-DD HH:mm:ss')}
+                          </div>
+                        </div>
+                      }
+                    />
+                  </List.Item>
+                )}
+              />
+            </Card>
+          )}
           {history.length > 0 ? (
             <Timeline
               className="status-timeline"
@@ -1070,8 +1157,16 @@ function DeclarationDetail() {
             )}
           </div>
           <div style={{ display: 'flex', gap: 8 }}>
-            {declaration?.status === 'draft' && (
+            {(declaration?.status === 'draft' || declaration?.status === 'rejected') && (
               <Button onClick={() => navigate(`/declarations/${id}/edit`)}>编辑</Button>
+            )}
+            {canResubmit() && (
+              <Button type="primary" icon={<SyncOutlined />} onClick={() => {
+                form.resetFields();
+                setResubmitModalVisible(true);
+              }}>
+                二次申报
+              </Button>
             )}
             {canApprove() && (
               <Button type="primary" icon={<CheckOutlined />} onClick={() => { form.resetFields(); form.setFieldsValue({ reason_category: undefined, comment: undefined }); setApproveModalVisible(true); }}>
@@ -1237,6 +1332,52 @@ function DeclarationDetail() {
               rules={[{ required: true, message: '请输入退回原因' }]}
             >
               <TextArea rows={4} placeholder="请输入退回原因" />
+            </Form.Item>
+          </Form>
+        </Modal>
+
+        <Modal
+          title="二次申报"
+          open={resubmitModalVisible}
+          onOk={handleResubmit}
+          onCancel={() => setResubmitModalVisible(false)}
+          okText="确认二次申报"
+          destroyOnClose
+        >
+          <div style={{ marginBottom: 16 }}>
+            <Alert
+              type="info"
+              showIcon
+              message="二次申报说明"
+              description="将保留原申报内容和所有附件，记录您的补充说明后，直接进入复核（复审）环节，无需重新建单。"
+              style={{ marginBottom: 16 }}
+            />
+            {declaration?.last_reject_reason && (
+              <Alert
+                type="error"
+                showIcon
+                message="上次驳回原因"
+                description={
+                  <div>
+                    <div style={{ marginBottom: 4 }}>
+                      <strong>驳回时间：</strong>
+                      {declaration.last_rejected_at ? dayjs(declaration.last_rejected_at).format('YYYY-MM-DD HH:mm') : '-'}
+                    </div>
+                    <div>{declaration.last_reject_reason}</div>
+                  </div>
+                }
+                style={{ marginBottom: 16 }}
+              />
+            )}
+          </div>
+          <Form form={form} layout="vertical">
+            <Form.Item
+              name="supplement_note"
+              label="补充说明"
+              rules={[{ required: true, message: '请填写补充说明，针对驳回原因进行说明' }]}
+              extra="请详细说明针对上次驳回原因所做的修改或补充"
+            >
+              <TextArea rows={6} placeholder="请详细填写补充说明，如：针对材料缺失问题已补充上传XX材料..." />
             </Form.Item>
           </Form>
         </Modal>

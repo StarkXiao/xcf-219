@@ -87,6 +87,18 @@ export interface Declaration {
   version_count?: number;
   is_in_recycle_bin?: boolean;
   is_followed?: number;
+  resubmit_count?: number;
+  last_rejected_at?: string | null;
+  last_reject_reason?: string | null;
+}
+
+export interface DeclarationResubmission {
+  id: number;
+  declaration_id: number;
+  resubmit_count: number;
+  supplement_note: string;
+  created_by: string | null;
+  created_at: string;
 }
 
 export interface SavedFilter {

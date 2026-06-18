@@ -7,7 +7,8 @@ import type {
   TodoKanbanSummary,
   SavedFilter,
   BatchCheckResult,
-  BatchSubmitResult
+  BatchSubmitResult,
+  DeclarationResubmission
 } from '../types';
 
 export const getDeclarations = (params?: {
@@ -122,4 +123,29 @@ export const updateSavedFilter = (id: number, data: { name?: string; filter_data
 
 export const deleteSavedFilter = (id: number) => {
   return api.delete<any, ApiResponse<void>>(`/declarations/filters/${id}`);
+};
+
+export const resubmitDeclaration = (
+  id: number,
+  data: {
+    supplement_note: string;
+    title?: string;
+    content?: string;
+    applicant?: string;
+    company?: string;
+    phone?: string;
+    email?: string;
+  }
+) => {
+  return api.post<any, ApiResponse<{
+    id: number;
+    status: string;
+    resubmit_count: number;
+    step_name: string;
+    version_number: number;
+  }>>(`/declarations/${id}/resubmit`, data);
+};
+
+export const getDeclarationResubmissions = (id: number) => {
+  return api.get<any, ApiResponse<DeclarationResubmission[]>>(`/declarations/${id}/resubmissions`);
 };
