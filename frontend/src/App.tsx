@@ -20,6 +20,7 @@ import Approval from './pages/Approval';
 import Logs from './pages/Logs';
 import Dashboard from './pages/Dashboard';
 import RecycleBin from './pages/RecycleBin';
+import GlobalSearch from './components/GlobalSearch';
 
 const { Header, Sider, Content } = Layout;
 
@@ -90,6 +91,9 @@ function App() {
         <Header style={{ display: 'flex', alignItems: 'center', background: '#001529' }}>
           <div style={{ color: '#fff', fontSize: '20px', fontWeight: 'bold', marginRight: '48px' }}>
             企业项目申报管理系统
+          </div>
+          <div style={{ flex: 1, display: 'flex', justifyContent: 'center' }}>
+            <GlobalSearch />
           </div>
         </Header>
         <Layout>
