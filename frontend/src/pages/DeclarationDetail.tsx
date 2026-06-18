@@ -9,7 +9,8 @@ import {
   AuditOutlined, HistoryOutlined, InfoCircleOutlined,
   CheckCircleOutlined, SyncOutlined, ClockCircleOutlined,
   CloseCircleOutlined, EditOutlined, DeleteOutlined,
-  PlusOutlined, CloudUploadOutlined, FolderOpenOutlined
+  PlusOutlined, CloudUploadOutlined, FolderOpenOutlined,
+  UserOutlined, CalendarOutlined, TeamOutlined
 } from '@ant-design/icons';
 import { useNavigate, useParams } from 'react-router-dom';
 import dayjs from 'dayjs';
@@ -280,15 +281,82 @@ function DeclarationDetail() {
     return <InfoCircleOutlined style={{ color: '#999' }} />;
   };
 
+  const formatDuration = (days: number) => {
+    if (!days || days <= 0) return '-';
+    if (days < 1) return `${Math.round(days * 24)}小时`;
+    return `${days}个工作日`;
+  };
+
+  const getCurrentStepWaitTime = () => {
+    if (!declaration || !declaration.updated_at) return null;
+    const now = dayjs();
+    const updatedAt = dayjs(declaration.updated_at);
+    const diffDays = now.diff(updatedAt, 'day');
+    const diffHours = now.diff(updatedAt, 'hour');
+    if (diffDays > 0) return `${diffDays}天${diffHours % 24}小时`;
+    if (diffHours > 0) return `${diffHours}小时`;
+    return '刚更新';
+  };
+
+  const getEstimatedCompletionDate = () => {
+    if (!declaration || !workflowInfo || !workflowInfo.current_step) return null;
+    const currentStep = workflowInfo.current_step;
+    const duration = currentStep.expected_duration || 0;
+    if (duration <= 0) return null;
+    const updatedAt = dayjs(declaration.updated_at);
+    return updatedAt.add(duration, 'day').format('YYYY-MM-DD');
+  };
+
+  const getTotalRemainingDuration = () => {
+    if (!declaration || !workflowInfo) return 0;
+    const currentStatus = declaration.status;
+    if (currentStatus === 'approved' || currentStatus === 'rejected') return 0;
+    
+    let totalDays = 0;
+    let foundCurrent = false;
+    
+    for (const step of workflowInfo.steps) {
+      if (step.pending_status === currentStatus) {
+        foundCurrent = true;
+      }
+      if (foundCurrent) {
+        totalDays += step.expected_duration || 0;
+      }
+    }
+    return totalDays;
+  };
+
   const buildWorkflowSteps = () => {
     if (!workflowInfo) return [];
 
-    const steps = [
-      { title: '草稿', description: '申请人编辑', icon: <EditOutlined /> }
+    const steps: Array<{
+      title: string;
+      description: string;
+      icon: JSX.Element;
+      detail: {
+        description: string;
+        role: string;
+        responsiblePerson: string;
+        expectedDuration: number;
+      };
+      isCurrent?: boolean;
+      isCompleted?: boolean;
+    }> = [
+      {
+        title: '草稿',
+        description: '申请人编辑',
+        icon: <EditOutlined />,
+        detail: {
+          description: '申请人填写申报信息、上传附件材料',
+          role: '申请人',
+          responsiblePerson: '申请人',
+          expectedDuration: 0
+        },
+        isCompleted: declaration?.status !== 'draft'
+      }
     ];
 
     const currentStatus = declaration?.status || '';
-    const currentStatusIsApproved = workflowInfo.steps.some(s => s.approved_status === currentStatus);
     const currentStepIndex = workflowInfo.steps.findIndex(s => s.pending_status === currentStatus);
     const approvedStepIndex = workflowInfo.steps.findIndex(s => s.approved_status === currentStatus);
 
@@ -299,18 +367,26 @@ function DeclarationDetail() {
         (currentStepIndex >= 0 && index < currentStepIndex) ||
         currentStatus === 'approved';
 
-      let stepIcon = <ClockCircleOutlined />;
-      if (isCurrent) stepIcon = <SyncOutlined />;
-      else if (isCompleted) stepIcon = <CheckCircleOutlined />;
+      let stepIcon = <ClockCircleOutlined style={{ color: '#bfbfbf' }} />;
+      if (isCurrent) stepIcon = <SyncOutlined spin style={{ color: '#1890ff' }} />;
+      else if (isCompleted) stepIcon = <CheckCircleOutlined style={{ color: '#52c41a' }} />;
 
       if (declaration?.status === 'rejected') {
-        stepIcon = <CloseCircleOutlined />;
+        stepIcon = <CloseCircleOutlined style={{ color: '#ff4d4f' }} />;
       }
 
       steps.push({
         title: step.name,
         description: step.role,
-        icon: stepIcon
+        icon: stepIcon,
+        detail: {
+          description: step.description || '',
+          role: step.role,
+          responsiblePerson: step.responsible_person || step.role,
+          expectedDuration: step.expected_duration || 0
+        },
+        isCurrent,
+        isCompleted
       });
     });
 
@@ -318,8 +394,14 @@ function DeclarationDetail() {
       title: '已立项',
       description: '审批完成',
       icon: declaration?.status === 'approved'
-        ? <CheckCircleOutlined />
-        : <ClockCircleOutlined />
+        ? <CheckCircleOutlined style={{ color: '#52c41a' }} />
+        : <ClockCircleOutlined style={{ color: '#bfbfbf' }} />,
+      detail: {
+        description: '审批通过，项目正式立项',
+        role: '系统',
+        responsiblePerson: '系统',
+        expectedDuration: 0
+      }
     });
 
     return steps;
@@ -523,33 +605,85 @@ function DeclarationDetail() {
         </span>
       ),
       children: (
-        <Descriptions column={2} bordered>
-          <Descriptions.Item label="项目名称">{declaration?.title}</Descriptions.Item>
-          <Descriptions.Item label="关联指南">{declaration?.guideline_title || '-'}</Descriptions.Item>
-          <Descriptions.Item label="申请人">{declaration?.applicant}</Descriptions.Item>
-          <Descriptions.Item label="企业名称">{declaration?.company}</Descriptions.Item>
-          <Descriptions.Item label="联系电话">{declaration?.phone || '-'}</Descriptions.Item>
-          <Descriptions.Item label="电子邮箱">{declaration?.email || '-'}</Descriptions.Item>
-          <Descriptions.Item label="当前状态">
-            <Tag color={getStatusColor(declaration?.status)}>
-              {getStatusLabel(declaration?.status)}
-            </Tag>
-          </Descriptions.Item>
-          <Descriptions.Item label="当前步骤">
-            {declaration?.current_step_name || workflowInfo?.current_step?.name || '-'}
-          </Descriptions.Item>
-          <Descriptions.Item label="工作流配置">
-            {workflowInfo?.config?.name || '默认审批流'}
-          </Descriptions.Item>
-          <Descriptions.Item label="当前步骤角色">
-            {workflowInfo?.current_step?.role || '-'}
-          </Descriptions.Item>
-          <Descriptions.Item label="创建时间">{dayjs(declaration?.created_at).format('YYYY-MM-DD HH:mm')}</Descriptions.Item>
-          <Descriptions.Item label="更新时间">{dayjs(declaration?.updated_at).format('YYYY-MM-DD HH:mm')}</Descriptions.Item>
-          <Descriptions.Item label="项目内容" span={2}>
-            <div style={{ whiteSpace: 'pre-wrap' }}>{declaration?.content}</div>
-          </Descriptions.Item>
-        </Descriptions>
+        <div>
+          {workflowInfo?.current_step && (
+            <div style={{
+              padding: 16,
+              background: 'linear-gradient(135deg, #f0f7ff 0%, #e6f4ff 100%)',
+              borderRadius: 8,
+              border: '1px solid #bae0ff',
+              marginBottom: 16
+            }}>
+              <div style={{ fontSize: 14, fontWeight: 500, color: '#0958d9', marginBottom: 12 }}>
+                <InfoCircleOutlined style={{ marginRight: 6 }} />
+                当前审批状态概览
+              </div>
+              <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap' }}>
+                <div style={{ flex: 1, minWidth: 180 }}>
+                  <div style={{ fontSize: 12, color: '#666', marginBottom: 4 }}>当前环节</div>
+                  <div style={{ fontSize: 16, fontWeight: 600, color: '#333' }}>
+                    {workflowInfo.current_step.name}
+                  </div>
+                </div>
+                <div style={{ flex: 1, minWidth: 180 }}>
+                  <div style={{ fontSize: 12, color: '#666', marginBottom: 4 }}>责任人</div>
+                  <div style={{ fontSize: 16, fontWeight: 600, color: '#333' }}>
+                    {workflowInfo.current_step.responsible_person || workflowInfo.current_step.role}
+                  </div>
+                </div>
+                <div style={{ flex: 1, minWidth: 180 }}>
+                  <div style={{ fontSize: 12, color: '#666', marginBottom: 4 }}>预计处理时长</div>
+                  <div style={{ fontSize: 16, fontWeight: 600, color: '#333' }}>
+                    {formatDuration(workflowInfo.current_step.expected_duration || 0)}
+                  </div>
+                </div>
+                <div style={{ flex: 1, minWidth: 180 }}>
+                  <div style={{ fontSize: 12, color: '#666', marginBottom: 4 }}>预计完成日期</div>
+                  <div style={{ fontSize: 16, fontWeight: 600, color: '#333' }}>
+                    {getEstimatedCompletionDate() || '-'}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          <Descriptions column={2} bordered>
+            <Descriptions.Item label="项目名称">{declaration?.title}</Descriptions.Item>
+            <Descriptions.Item label="关联指南">{declaration?.guideline_title || '-'}</Descriptions.Item>
+            <Descriptions.Item label="申请人">{declaration?.applicant}</Descriptions.Item>
+            <Descriptions.Item label="企业名称">{declaration?.company}</Descriptions.Item>
+            <Descriptions.Item label="联系电话">{declaration?.phone || '-'}</Descriptions.Item>
+            <Descriptions.Item label="电子邮箱">{declaration?.email || '-'}</Descriptions.Item>
+            <Descriptions.Item label="当前状态">
+              <Tag color={getStatusColor(declaration?.status)}>
+                {getStatusLabel(declaration?.status)}
+              </Tag>
+            </Descriptions.Item>
+            <Descriptions.Item label="当前步骤">
+              {declaration?.current_step_name || workflowInfo?.current_step?.name || '-'}
+            </Descriptions.Item>
+            <Descriptions.Item label="工作流配置">
+              {workflowInfo?.config?.name || '默认审批流'}
+            </Descriptions.Item>
+            <Descriptions.Item label="当前步骤角色">
+              {workflowInfo?.current_step?.role || '-'}
+            </Descriptions.Item>
+            <Descriptions.Item label="当前责任人">
+              {workflowInfo?.current_step?.responsible_person || workflowInfo?.current_step?.role || '-'}
+            </Descriptions.Item>
+            <Descriptions.Item label="预计剩余时间">
+              {formatDuration(getTotalRemainingDuration()) || '-'}
+            </Descriptions.Item>
+            <Descriptions.Item label="创建时间">{dayjs(declaration?.created_at).format('YYYY-MM-DD HH:mm')}</Descriptions.Item>
+            <Descriptions.Item label="更新时间">{dayjs(declaration?.updated_at).format('YYYY-MM-DD HH:mm')}</Descriptions.Item>
+            <Descriptions.Item label="节点说明" span={2}>
+              {workflowInfo?.current_step?.description || '暂无'}
+            </Descriptions.Item>
+            <Descriptions.Item label="项目内容" span={2}>
+              <div style={{ whiteSpace: 'pre-wrap' }}>{declaration?.content}</div>
+            </Descriptions.Item>
+          </Descriptions>
+        </div>
       )
     },
     {
@@ -624,20 +758,207 @@ function DeclarationDetail() {
       children: (
         <div>
           {workflowInfo && workflowInfo.steps.length > 0 && (
-            <div style={{ marginBottom: 24, padding: 16, background: '#fafafa', borderRadius: 8 }}>
-              <div style={{ fontSize: 14, fontWeight: 500, marginBottom: 12, color: '#333' }}>
-                审批流程进度
+            <div style={{ marginBottom: 24 }}>
+              <div style={{
+                padding: 20,
+                background: 'linear-gradient(135deg, #f0f7ff 0%, #e6f4ff 100%)',
+                borderRadius: 12,
+                border: '1px solid #bae0ff',
+                marginBottom: 16
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+                  <div>
+                    <div style={{ fontSize: 16, fontWeight: 600, color: '#0958d9', marginBottom: 4 }}>
+                      {workflowInfo.config?.name || '审批流程'}
+                    </div>
+                    <div style={{ fontSize: 13, color: '#666' }}>
+                      共 {workflowInfo.steps.length + 2} 个节点，当前第 {getCurrentStepIndex() + 1} 步
+                    </div>
+                  </div>
+                  {workflowInfo.current_step && (
+                    <div style={{ textAlign: 'right' }}>
+                      <div style={{ fontSize: 13, color: '#666', marginBottom: 4 }}>
+                        预计剩余处理时间
+                      </div>
+                      <div style={{ fontSize: 20, fontWeight: 600, color: '#0958d9' }}>
+                        {formatDuration(getTotalRemainingDuration())}
+                      </div>
+                    </div>
+                  )}
+                </div>
+                
+                {workflowInfo.current_step && (
+                  <div style={{
+                    padding: 16,
+                    background: '#fff',
+                    borderRadius: 8,
+                    border: '1px solid #91caff'
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
+                      <div style={{
+                        width: 40,
+                        height: 40,
+                        borderRadius: '50%',
+                        background: '#e6f4ff',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center'
+                      }}>
+                        <SyncOutlined spin style={{ fontSize: 20, color: '#1890ff' }} />
+                      </div>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontSize: 15, fontWeight: 600, color: '#333' }}>
+                          当前：{workflowInfo.current_step.name}
+                        </div>
+                        <div style={{ fontSize: 13, color: '#666' }}>
+                          {workflowInfo.current_step.description || '正在处理中...'}
+                        </div>
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <UserOutlined style={{ color: '#1890ff' }} />
+                        <span style={{ fontSize: 13, color: '#666' }}>责任人：</span>
+                        <span style={{ fontSize: 13, color: '#333', fontWeight: 500 }}>
+                          {workflowInfo.current_step.responsible_person || workflowInfo.current_step.role}
+                        </span>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <TeamOutlined style={{ color: '#52c41a' }} />
+                        <span style={{ fontSize: 13, color: '#666' }}>角色：</span>
+                        <span style={{ fontSize: 13, color: '#333', fontWeight: 500 }}>
+                          {workflowInfo.current_step.role}
+                        </span>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <ClockCircleOutlined style={{ color: '#faad14' }} />
+                        <span style={{ fontSize: 13, color: '#666' }}>预计处理时长：</span>
+                        <span style={{ fontSize: 13, color: '#333', fontWeight: 500 }}>
+                          {formatDuration(workflowInfo.current_step.expected_duration || 0)}
+                        </span>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <CalendarOutlined style={{ color: '#722ed1' }} />
+                        <span style={{ fontSize: 13, color: '#666' }}>预计完成：</span>
+                        <span style={{ fontSize: 13, color: '#333', fontWeight: 500 }}>
+                          {getEstimatedCompletionDate() || '-'}
+                        </span>
+                      </div>
+                      {getCurrentStepWaitTime() && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <InfoCircleOutlined style={{ color: '#13c2c2' }} />
+                          <span style={{ fontSize: 13, color: '#666' }}>已等待：</span>
+                          <span style={{ fontSize: 13, color: '#333', fontWeight: 500 }}>
+                            {getCurrentStepWaitTime()}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
-              <Steps
-                current={getCurrentStepIndex()}
-                status={getStatusStepStatus()}
-                items={buildWorkflowSteps().map(step => ({
-                  title: step.title,
-                  description: step.description,
-                  icon: step.icon
-                }))}
-                size="small"
-              />
+
+              <div style={{ padding: '20px 16px', background: '#fafafa', borderRadius: 8 }}>
+                <div style={{ fontSize: 14, fontWeight: 500, marginBottom: 16, color: '#333' }}>
+                  审批流程进度
+                </div>
+                <Steps
+                  current={getCurrentStepIndex()}
+                  status={getStatusStepStatus()}
+                  items={buildWorkflowSteps().map(step => ({
+                    title: step.title,
+                    description: (
+                      <Tooltip title={step.detail?.description || step.description}>
+                        <div style={{ fontSize: 12 }}>
+                          <div>{step.detail?.role || step.description}</div>
+                          {step.detail?.expectedDuration && step.detail.expectedDuration > 0 && (
+                            <div style={{ color: '#999', marginTop: 2 }}>
+                              预计{formatDuration(step.detail.expectedDuration)}
+                            </div>
+                          )}
+                        </div>
+                      </Tooltip>
+                    ),
+                    icon: step.icon,
+                    subTitle: step.detail?.responsiblePerson ? (
+                      <Tag color="blue" style={{ fontSize: 11, padding: '0 6px', height: 20, lineHeight: '20px', marginTop: 4 }}>
+                        {step.detail.responsiblePerson}
+                      </Tag>
+                    ) : undefined
+                  }))}
+                  size="default"
+                />
+              </div>
+
+              <div style={{ marginTop: 16 }}>
+                <Card size="small" title="节点详情" style={{ borderRadius: 8 }}>
+                  <List
+                    size="small"
+                    dataSource={buildWorkflowSteps()}
+                    renderItem={(step, index) => (
+                      <List.Item
+                        style={{
+                          padding: '12px 0',
+                          borderBottom: index < buildWorkflowSteps().length - 1 ? '1px solid #f0f0f0' : 'none'
+                        }}
+                      >
+                        <List.Item.Meta
+                          avatar={
+                            <div style={{
+                              width: 36,
+                              height: 36,
+                              borderRadius: '50%',
+                              background: step.isCompleted
+                                ? '#f6ffed'
+                                : step.isCurrent
+                                ? '#e6f4ff'
+                                : '#f5f5f5',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center'
+                            }}>
+                              {step.icon}
+                            </div>
+                          }
+                          title={
+                            <Space>
+                              <span style={{ fontWeight: 500 }}>{step.title}</span>
+                              {step.isCurrent && (
+                                <Tag color="processing" style={{ fontSize: 11, padding: '0 6px', height: 20, lineHeight: '20px' }}>当前</Tag>
+                              )}
+                              {step.isCompleted && !step.isCurrent && (
+                                <Tag color="success" style={{ fontSize: 11, padding: '0 6px', height: 20, lineHeight: '20px' }}>已完成</Tag>
+                              )}
+                              {!step.isCompleted && !step.isCurrent && (
+                                <Tag color="default" style={{ fontSize: 11, padding: '0 6px', height: 20, lineHeight: '20px' }}>待处理</Tag>
+                              )}
+                            </Space>
+                          }
+                          description={
+                            <div style={{ fontSize: 13, color: '#666', marginTop: 4 }}>
+                              {step.detail?.description || '暂无描述'}
+                            </div>
+                          }
+                        />
+                        <div style={{ textAlign: 'right', minWidth: 200 }}>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                            <div style={{ fontSize: 12, color: '#999' }}>
+                              <UserOutlined style={{ marginRight: 4 }} />
+                              {step.detail?.responsiblePerson || step.detail?.role || '-'}
+                            </div>
+                            {step.detail?.expectedDuration && step.detail.expectedDuration > 0 && (
+                              <div style={{ fontSize: 12, color: '#999' }}>
+                                <ClockCircleOutlined style={{ marginRight: 4 }} />
+                                预计 {formatDuration(step.detail.expectedDuration)}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </List.Item>
+                    )}
+                  />
+                </Card>
+              </div>
             </div>
           )}
           {history.length > 0 ? (

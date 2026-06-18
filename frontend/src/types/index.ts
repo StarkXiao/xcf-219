@@ -414,6 +414,9 @@ export interface WorkflowConfigStep {
   approved_status: string;
   allow_rollback: boolean;
   rollback_targets: number[];
+  description?: string;
+  expected_duration?: number;
+  responsible_person?: string;
   created_at?: string;
 }
 

@@ -176,7 +176,9 @@ function initDatabase() {
       name TEXT NOT NULL,
       description TEXT,
       step_order INTEGER NOT NULL,
-      role TEXT
+      role TEXT,
+      expected_duration INTEGER DEFAULT 0,
+      responsible_person TEXT
     );
 
     CREATE TABLE IF NOT EXISTS workflow_configs (
@@ -200,6 +202,9 @@ function initDatabase() {
       approved_status TEXT NOT NULL,
       allow_rollback INTEGER DEFAULT 1,
       rollback_targets TEXT DEFAULT '[]',
+      description TEXT,
+      expected_duration INTEGER DEFAULT 0,
+      responsible_person TEXT,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (config_id) REFERENCES workflow_configs(id) ON DELETE CASCADE
     );
@@ -260,6 +265,11 @@ function initDatabase() {
   safeAddColumn('approval_records', 'step_name', 'TEXT');
   safeAddColumn('approval_records', 'step_role', 'TEXT');
   safeAddColumn('approval_records', 'reason_category', 'TEXT');
+  safeAddColumn('workflow_config_steps', 'description', 'TEXT');
+  safeAddColumn('workflow_config_steps', 'expected_duration', 'INTEGER DEFAULT 0');
+  safeAddColumn('workflow_config_steps', 'responsible_person', 'TEXT');
+  safeAddColumn('workflow_steps', 'expected_duration', 'INTEGER DEFAULT 0');
+  safeAddColumn('workflow_steps', 'responsible_person', 'TEXT');
   safeCreateIndex('idx_attachments_hash', 'attachments', 'file_hash');
   safeCreateIndex('idx_material_types_guideline', 'material_types', 'guideline_id');
   safeCreateIndex('idx_workflow_configs_guideline', 'workflow_configs', 'guideline_id');
@@ -304,16 +314,16 @@ function initDatabase() {
   const stepCount = get('SELECT COUNT(*) as count FROM workflow_steps');
   if (stepCount.count === 0) {
     const insertStep = db.prepare(`
-      INSERT INTO workflow_steps (name, description, step_order, role)
-      VALUES (?, ?, ?, ?)
+      INSERT INTO workflow_steps (name, description, step_order, role, expected_duration, responsible_person)
+      VALUES (?, ?, ?, ?, ?, ?)
     `);
 
-    insertStep.run('草稿', '申报人填写申报信息', 0, '申请人');
-    insertStep.run('初审', '材料形式审查', 1, '初审员');
-    insertStep.run('复审', '业务部门审核', 2, '复审员');
-    insertStep.run('终审', '领导审批', 3, '领导');
-    insertStep.run('已立项', '审批通过', 4, '系统');
-    insertStep.run('已驳回', '审批不通过', 5, '系统');
+    insertStep.run('草稿', '申请人填写申报信息、上传附件材料', 0, '申请人', 0, '申请人');
+    insertStep.run('初审', '对申报材料进行形式审查，检查材料完整性和规范性', 1, '初审员', 3, '初审员');
+    insertStep.run('复审', '业务部门对项目内容进行实质性审核', 2, '复审员', 5, '复审员');
+    insertStep.run('终审', '领导最终审批决策', 3, '领导', 3, '领导');
+    insertStep.run('已立项', '审批通过，项目正式立项', 4, '系统', 0, '系统');
+    insertStep.run('已驳回', '审批不通过，申报终止', 5, '系统', 0, '系统');
   }
 
   const configCount = get('SELECT COUNT(*) as count FROM workflow_configs');
@@ -323,24 +333,24 @@ function initDatabase() {
       VALUES (?, ?, ?)
     `);
     const insertConfigStep = db.prepare(`
-      INSERT INTO workflow_config_steps (config_id, name, step_key, role, step_order, pending_status, approved_status, allow_rollback, rollback_targets)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO workflow_config_steps (config_id, name, step_key, role, step_order, pending_status, approved_status, allow_rollback, rollback_targets, description, expected_duration, responsible_person)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     const config1 = insertConfig.run(1, '科技项目审批流', '科技型中小企业技术创新基金审批流程');
-    insertConfigStep.run(config1.lastInsertRowid, '初审', 'initial_review', '初审员', 1, 'submitted', 'first_reviewed', 1, '[0]');
-    insertConfigStep.run(config1.lastInsertRowid, '专家评审', 'expert_review', '评审专家', 2, 'first_reviewed', 'expert_reviewed', 1, '[1,0]');
-    insertConfigStep.run(config1.lastInsertRowid, '终审', 'final_review', '领导', 3, 'expert_reviewed', 'approved', 1, '[2,1,0]');
+    insertConfigStep.run(config1.lastInsertRowid, '初审', 'initial_review', '初审员', 1, 'submitted', 'first_reviewed', 1, '[0]', '对申报材料进行形式审查，检查材料完整性和规范性', 3, '初审员');
+    insertConfigStep.run(config1.lastInsertRowid, '专家评审', 'expert_review', '评审专家', 2, 'first_reviewed', 'expert_reviewed', 1, '[1,0]', '邀请行业专家对项目技术创新性、可行性进行评审', 7, '评审专家');
+    insertConfigStep.run(config1.lastInsertRowid, '终审', 'final_review', '领导', 3, 'expert_reviewed', 'approved', 1, '[2,1,0]', '领导根据专家评审意见进行最终审批决策', 3, '领导');
 
     const config2 = insertConfig.run(2, '小微企业审批流', '小微企业发展专项资金审批流程');
-    insertConfigStep.run(config2.lastInsertRowid, '初审', 'initial_review', '初审员', 1, 'submitted', 'first_reviewed', 1, '[0]');
-    insertConfigStep.run(config2.lastInsertRowid, '复审', 'second_review', '复审员', 2, 'first_reviewed', 'approved', 1, '[1,0]');
+    insertConfigStep.run(config2.lastInsertRowid, '初审', 'initial_review', '初审员', 1, 'submitted', 'first_reviewed', 1, '[0]', '对申报材料进行形式审查，核查企业资质', 2, '初审员');
+    insertConfigStep.run(config2.lastInsertRowid, '复审', 'second_review', '复审员', 2, 'first_reviewed', 'approved', 1, '[1,0]', '业务部门对项目内容和资金使用进行审核', 5, '复审员');
 
     const config3 = insertConfig.run(3, '高企认定审批流', '高新技术企业认定审批流程');
-    insertConfigStep.run(config3.lastInsertRowid, '形式审查', 'formal_review', '审查员', 1, 'submitted', 'formal_reviewed', 1, '[0]');
-    insertConfigStep.run(config3.lastInsertRowid, '专家评审', 'expert_review', '评审专家', 2, 'formal_reviewed', 'expert_reviewed', 1, '[1,0]');
-    insertConfigStep.run(config3.lastInsertRowid, '公示审核', 'public_review', '公示专员', 3, 'expert_reviewed', 'public_reviewed', 1, '[2,1,0]');
-    insertConfigStep.run(config3.lastInsertRowid, '认定审批', 'final_approval', '认定委员会', 4, 'public_reviewed', 'approved', 1, '[3,2,1,0]');
+    insertConfigStep.run(config3.lastInsertRowid, '形式审查', 'formal_review', '审查员', 1, 'submitted', 'formal_reviewed', 1, '[0]', '对申报材料进行形式审查，检查材料完整性和规范性', 3, '审查员');
+    insertConfigStep.run(config3.lastInsertRowid, '专家评审', 'expert_review', '评审专家', 2, 'formal_reviewed', 'expert_reviewed', 1, '[1,0]', '技术专家和财务专家对企业进行综合评审', 10, '评审专家');
+    insertConfigStep.run(config3.lastInsertRowid, '公示审核', 'public_review', '公示专员', 3, 'expert_reviewed', 'public_reviewed', 1, '[2,1,0]', '对拟认定企业进行公示，接受社会监督', 5, '公示专员');
+    insertConfigStep.run(config3.lastInsertRowid, '认定审批', 'final_approval', '认定委员会', 4, 'public_reviewed', 'approved', 1, '[3,2,1,0]', '认定委员会进行最终审批并颁发证书', 3, '认定委员会');
   }
 
   const materialTypeCount = get('SELECT COUNT(*) as count FROM material_types');

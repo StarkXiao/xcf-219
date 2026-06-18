@@ -23,7 +23,10 @@ router.get('/', (req, res) => {
         steps: steps.map(s => ({
           ...s,
           allow_rollback: !!s.allow_rollback,
-          rollback_targets: JSON.parse(s.rollback_targets || '[]')
+          rollback_targets: JSON.parse(s.rollback_targets || '[]'),
+          expected_duration: s.expected_duration || 0,
+          description: s.description || '',
+          responsible_person: s.responsible_person || ''
         }))
       };
     });
@@ -57,7 +60,10 @@ router.get('/guideline/:guidelineId', (req, res) => {
         steps: steps.map(s => ({
           ...s,
           allow_rollback: !!s.allow_rollback,
-          rollback_targets: JSON.parse(s.rollback_targets || '[]')
+          rollback_targets: JSON.parse(s.rollback_targets || '[]'),
+          expected_duration: s.expected_duration || 0,
+          description: s.description || '',
+          responsible_person: s.responsible_person || ''
         }))
       }
     });
@@ -85,7 +91,10 @@ router.get('/:id', (req, res) => {
         steps: steps.map(s => ({
           ...s,
           allow_rollback: !!s.allow_rollback,
-          rollback_targets: JSON.parse(s.rollback_targets || '[]')
+          rollback_targets: JSON.parse(s.rollback_targets || '[]'),
+          expected_duration: s.expected_duration || 0,
+          description: s.description || '',
+          responsible_person: s.responsible_person || ''
         }))
       }
     });
@@ -123,8 +132,8 @@ router.post('/', (req, res) => {
 
     const configId = configResult.lastID;
     const insertStep = db.prepare(`
-      INSERT INTO workflow_config_steps (config_id, name, step_key, role, step_order, pending_status, approved_status, allow_rollback, rollback_targets)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO workflow_config_steps (config_id, name, step_key, role, step_order, pending_status, approved_status, allow_rollback, rollback_targets, description, expected_duration, responsible_person)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     for (const step of steps) {
@@ -137,7 +146,10 @@ router.post('/', (req, res) => {
         step.pending_status,
         step.approved_status,
         step.allow_rollback !== false ? 1 : 0,
-        JSON.stringify(step.rollback_targets || [])
+        JSON.stringify(step.rollback_targets || []),
+        step.description || '',
+        step.expected_duration || 0,
+        step.responsible_person || ''
       );
     }
 
@@ -156,7 +168,10 @@ router.post('/', (req, res) => {
         steps: configSteps.map(s => ({
           ...s,
           allow_rollback: !!s.allow_rollback,
-          rollback_targets: JSON.parse(s.rollback_targets || '[]')
+          rollback_targets: JSON.parse(s.rollback_targets || '[]'),
+          expected_duration: s.expected_duration || 0,
+          description: s.description || '',
+          responsible_person: s.responsible_person || ''
         }))
       }
     });
@@ -185,8 +200,8 @@ router.put('/:id', (req, res) => {
       run('DELETE FROM workflow_config_steps WHERE config_id = ?', [configId]);
 
       const insertStep = db.prepare(`
-        INSERT INTO workflow_config_steps (config_id, name, step_key, role, step_order, pending_status, approved_status, allow_rollback, rollback_targets)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO workflow_config_steps (config_id, name, step_key, role, step_order, pending_status, approved_status, allow_rollback, rollback_targets, description, expected_duration, responsible_person)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `);
 
       for (const step of steps) {
@@ -199,7 +214,10 @@ router.put('/:id', (req, res) => {
           step.pending_status,
           step.approved_status,
           step.allow_rollback !== false ? 1 : 0,
-          JSON.stringify(step.rollback_targets || [])
+          JSON.stringify(step.rollback_targets || []),
+          step.description || '',
+          step.expected_duration || 0,
+          step.responsible_person || ''
         );
       }
     }
@@ -219,7 +237,10 @@ router.put('/:id', (req, res) => {
         steps: configSteps.map(s => ({
           ...s,
           allow_rollback: !!s.allow_rollback,
-          rollback_targets: JSON.parse(s.rollback_targets || '[]')
+          rollback_targets: JSON.parse(s.rollback_targets || '[]'),
+          expected_duration: s.expected_duration || 0,
+          description: s.description || '',
+          responsible_person: s.responsible_person || ''
         }))
       }
     });

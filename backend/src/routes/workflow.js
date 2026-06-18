@@ -37,7 +37,10 @@ function getWorkflowConfig(declaration) {
         steps: steps.map(s => ({
           ...s,
           allow_rollback: !!s.allow_rollback,
-          rollback_targets: JSON.parse(s.rollback_targets || '[]')
+          rollback_targets: JSON.parse(s.rollback_targets || '[]'),
+          description: s.description || '',
+          expected_duration: s.expected_duration || 0,
+          responsible_person: s.responsible_person || ''
         }))
       };
     }
@@ -55,7 +58,10 @@ function getWorkflowConfig(declaration) {
         steps: steps.map(s => ({
           ...s,
           allow_rollback: !!s.allow_rollback,
-          rollback_targets: JSON.parse(s.rollback_targets || '[]')
+          rollback_targets: JSON.parse(s.rollback_targets || '[]'),
+          description: s.description || '',
+          expected_duration: s.expected_duration || 0,
+          responsible_person: s.responsible_person || ''
         }))
       };
     }
@@ -69,9 +75,9 @@ function getFallbackConfig() {
     id: null,
     name: '默认审批流',
     steps: [
-      { step_order: 1, name: '初审', step_key: 'initial_review', role: '初审员', pending_status: 'submitted', approved_status: 'first_reviewed', allow_rollback: true, rollback_targets: [0] },
-      { step_order: 2, name: '复审', step_key: 'second_review', role: '复审员', pending_status: 'first_reviewed', approved_status: 'second_reviewed', allow_rollback: true, rollback_targets: [1, 0] },
-      { step_order: 3, name: '终审', step_key: 'final_review', role: '终审员', pending_status: 'second_reviewed', approved_status: 'approved', allow_rollback: true, rollback_targets: [2, 1, 0] }
+      { step_order: 1, name: '初审', step_key: 'initial_review', role: '初审员', pending_status: 'submitted', approved_status: 'first_reviewed', allow_rollback: true, rollback_targets: [0], description: '对申报材料进行形式审查，检查材料完整性和规范性', expected_duration: 3, responsible_person: '初审员' },
+      { step_order: 2, name: '复审', step_key: 'second_review', role: '复审员', pending_status: 'first_reviewed', approved_status: 'second_reviewed', allow_rollback: true, rollback_targets: [1, 0], description: '业务部门对项目内容进行实质性审核', expected_duration: 5, responsible_person: '复审员' },
+      { step_order: 3, name: '终审', step_key: 'final_review', role: '终审员', pending_status: 'second_reviewed', approved_status: 'approved', allow_rollback: true, rollback_targets: [2, 1, 0], description: '领导最终审批决策', expected_duration: 3, responsible_person: '终审员' }
     ]
   };
 }
