@@ -20,13 +20,14 @@ import {
 } from '../api/attachments';
 import {
   getApprovalHistory, approveDeclaration, rejectDeclaration,
-  rollbackDeclaration, getWorkflowInfo
+  rollbackDeclaration, getWorkflowInfo, getApprovalReasonCategories
 } from '../api/workflow';
 import { getDeclarationTimeline } from '../api/logs';
 import { StatusMap, StatusColorMap } from '../types';
 import type {
   Declaration, Attachment, ApprovalRecord,
-  OperationTimelineEvent, WorkflowInfo, MissingCheckResult
+  OperationTimelineEvent, WorkflowInfo, MissingCheckResult,
+  ApprovalReasonCategory
 } from '../types';
 
 const { TextArea } = Input;
@@ -48,6 +49,35 @@ function DeclarationDetail() {
   const [rollbackModalVisible, setRollbackModalVisible] = useState(false);
   const [selectedAttachmentIds, setSelectedAttachmentIds] = useState<number[]>([]);
   const [form] = Form.useForm();
+  const [approveReasonCategories, setApproveReasonCategories] = useState<ApprovalReasonCategory[]>([]);
+  const [rejectReasonCategories, setRejectReasonCategories] = useState<ApprovalReasonCategory[]>([]);
+  const [rollbackReasonCategories, setRollbackReasonCategories] = useState<ApprovalReasonCategory[]>([]);
+
+  const loadReasonCategories = async () => {
+    try {
+      const [approveRes, rejectRes, rollbackRes] = await Promise.all([
+        getApprovalReasonCategories('approve'),
+        getApprovalReasonCategories('reject'),
+        getApprovalReasonCategories('rollback')
+      ]);
+      if (approveRes.success) setApproveReasonCategories(approveRes.data || []);
+      if (rejectRes.success) setRejectReasonCategories(rejectRes.data || []);
+      if (rollbackRes.success) setRollbackReasonCategories(rollbackRes.data || []);
+    } catch (error) {
+      console.error('加载原因分类失败:', error);
+    }
+  };
+
+  const getReasonCategoryName = (code?: string): string => {
+    if (!code) return '';
+    const all = [...approveReasonCategories, ...rejectReasonCategories, ...rollbackReasonCategories];
+    const found = all.find(c => c.code === code);
+    return found ? found.name : code;
+  };
+
+  useEffect(() => {
+    loadReasonCategories();
+  }, []);
 
   useEffect(() => {
     if (id) {
@@ -627,6 +657,11 @@ function DeclarationDetail() {
                       审批人: {record.approver}
                       {record.step_role && <span style={{ marginLeft: 8, color: '#999' }}>({record.step_role})</span>}
                     </div>
+                    {record.reason_category && (
+                      <div style={{ color: '#666', fontSize: 13, marginTop: 4 }}>
+                        原因分类: <Tag color="orange">{getReasonCategoryName(record.reason_category)}</Tag>
+                      </div>
+                    )}
                     {record.comment && (
                       <div style={{
                         color: '#666', fontSize: 13, marginTop: 4,
@@ -718,17 +753,17 @@ function DeclarationDetail() {
               <Button onClick={() => navigate(`/declarations/${id}/edit`)}>编辑</Button>
             )}
             {canApprove() && (
-              <Button type="primary" icon={<CheckOutlined />} onClick={() => { form.resetFields(); setApproveModalVisible(true); }}>
+              <Button type="primary" icon={<CheckOutlined />} onClick={() => { form.resetFields(); form.setFieldsValue({ reason_category: undefined, comment: undefined }); setApproveModalVisible(true); }}>
                 审批通过
               </Button>
             )}
             {canReject() && (
-              <Button danger icon={<CloseOutlined />} onClick={() => { form.resetFields(); setRejectModalVisible(true); }}>
+              <Button danger icon={<CloseOutlined />} onClick={() => { form.resetFields(); form.setFieldsValue({ reason_category: undefined, comment: undefined }); setRejectModalVisible(true); }}>
                 驳回
               </Button>
             )}
             {canRollback() && (
-              <Button icon={<RollbackOutlined />} onClick={() => { form.resetFields(); setRollbackModalVisible(true); }}>
+              <Button icon={<RollbackOutlined />} onClick={() => { form.resetFields(); form.setFieldsValue({ reason_category: undefined, comment: undefined, target_step: undefined }); setRollbackModalVisible(true); }}>
                 退回
               </Button>
             )}
@@ -759,8 +794,25 @@ function DeclarationDetail() {
             >
               <Input placeholder="请输入审批人姓名" />
             </Form.Item>
-            <Form.Item name="comment" label="审批意见">
-              <TextArea rows={4} placeholder="请输入审批意见（可选）" />
+            <Form.Item
+              name="reason_category"
+              label="通过原因分类"
+              rules={[{ required: true, message: '请选择通过原因分类' }]}
+            >
+              <Select placeholder="请选择通过原因分类">
+                {approveReasonCategories.map(cat => (
+                  <Option key={cat.code} value={cat.code}>
+                    {cat.name}
+                  </Option>
+                ))}
+              </Select>
+            </Form.Item>
+            <Form.Item
+              name="comment"
+              label="审批意见"
+              rules={[{ required: true, message: '请输入审批意见' }]}
+            >
+              <TextArea rows={4} placeholder="请输入审批意见" />
             </Form.Item>
           </Form>
         </Modal>
@@ -782,9 +834,27 @@ function DeclarationDetail() {
               <Input placeholder="请输入审批人姓名" />
             </Form.Item>
             <Form.Item
+              name="reason_category"
+              label="驳回原因分类"
+              rules={[{ required: true, message: '请选择驳回原因分类' }]}
+            >
+              <Select placeholder="请选择驳回原因分类">
+                {rejectReasonCategories.map(cat => (
+                  <Option key={cat.code} value={cat.code}>
+                    {cat.name}
+                  </Option>
+                ))}
+              </Select>
+            </Form.Item>
+            <Form.Item
               name="comment"
               label="驳回原因"
               rules={[{ required: true, message: '请输入驳回原因' }]}
+              extra={missingCheck && !missingCheck.stats.is_complete ? (
+                <span style={{ color: '#1890ff' }}>
+                  可参考：缺少 {missingCheck.stats.required_missing} 项必填材料
+                </span>
+              ) : null}
             >
               <TextArea rows={4} placeholder="请输入驳回原因" />
             </Form.Item>
@@ -827,8 +897,25 @@ function DeclarationDetail() {
                 )}
               </Select>
             </Form.Item>
-            <Form.Item name="comment" label="退回原因">
-              <TextArea rows={4} placeholder="请输入退回原因（可选）" />
+            <Form.Item
+              name="reason_category"
+              label="退回原因分类"
+              rules={[{ required: true, message: '请选择退回原因分类' }]}
+            >
+              <Select placeholder="请选择退回原因分类">
+                {rollbackReasonCategories.map(cat => (
+                  <Option key={cat.code} value={cat.code}>
+                    {cat.name}
+                  </Option>
+                ))}
+              </Select>
+            </Form.Item>
+            <Form.Item
+              name="comment"
+              label="退回原因"
+              rules={[{ required: true, message: '请输入退回原因' }]}
+            >
+              <TextArea rows={4} placeholder="请输入退回原因" />
             </Form.Item>
           </Form>
         </Modal>

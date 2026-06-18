@@ -2,9 +2,9 @@ import { useState, useEffect } from 'react';
 import { Card, Steps, Button, Select, List, Tag, message, Space, Modal, Form, Input } from 'antd';
 import { ArrowRightOutlined, CheckOutlined, CloseOutlined, RollbackOutlined } from '@ant-design/icons';
 import { getDeclarations, createDeclaration, submitDeclaration } from '../api/declarations';
-import { getApprovalHistory, approveDeclaration, rejectDeclaration, rollbackDeclaration } from '../api/workflow';
+import { getApprovalHistory, approveDeclaration, rejectDeclaration, rollbackDeclaration, getApprovalReasonCategories } from '../api/workflow';
 import { StatusMap, StatusColorMap } from '../types';
-import type { Declaration, ApprovalRecord } from '../types';
+import type { Declaration, ApprovalRecord, ApprovalReasonCategory } from '../types';
 import dayjs from 'dayjs';
 
 const { Step } = Steps;
@@ -29,9 +29,35 @@ function WorkflowDemo() {
   const [rejectModalVisible, setRejectModalVisible] = useState(false);
   const [rollbackModalVisible, setRollbackModalVisible] = useState(false);
   const [form] = Form.useForm();
+  const [approveReasonCategories, setApproveReasonCategories] = useState<ApprovalReasonCategory[]>([]);
+  const [rejectReasonCategories, setRejectReasonCategories] = useState<ApprovalReasonCategory[]>([]);
+  const [rollbackReasonCategories, setRollbackReasonCategories] = useState<ApprovalReasonCategory[]>([]);
+
+  const loadReasonCategories = async () => {
+    try {
+      const [approveRes, rejectRes, rollbackRes] = await Promise.all([
+        getApprovalReasonCategories('approve'),
+        getApprovalReasonCategories('reject'),
+        getApprovalReasonCategories('rollback')
+      ]);
+      if (approveRes.success) setApproveReasonCategories(approveRes.data || []);
+      if (rejectRes.success) setRejectReasonCategories(rejectRes.data || []);
+      if (rollbackRes.success) setRollbackReasonCategories(rollbackRes.data || []);
+    } catch (error) {
+      console.error('加载原因分类失败:', error);
+    }
+  };
+
+  const getReasonCategoryName = (code?: string): string => {
+    if (!code) return '';
+    const all = [...approveReasonCategories, ...rejectReasonCategories, ...rollbackReasonCategories];
+    const found = all.find(c => c.code === code);
+    return found ? found.name : code;
+  };
 
   useEffect(() => {
     loadDeclarations();
+    loadReasonCategories();
   }, []);
 
   useEffect(() => {
@@ -286,6 +312,11 @@ function WorkflowDemo() {
                   description={
                     <div>
                       <div>审批人: {item.approver}</div>
+                      {item.reason_category && (
+                        <div>
+                          原因分类: <Tag color="orange">{getReasonCategoryName(item.reason_category)}</Tag>
+                        </div>
+                      )}
                       {item.comment && <div>意见: {item.comment}</div>}
                       <div style={{ color: '#999', fontSize: 12 }}>
                         {dayjs(item.created_at).format('YYYY-MM-DD HH:mm:ss')}
@@ -320,11 +351,26 @@ function WorkflowDemo() {
             <Input placeholder="请输入审批人姓名" />
           </Form.Item>
           <Form.Item
+            name="reason_category"
+            label="通过原因分类"
+            rules={[{ required: true, message: '请选择通过原因分类' }]}
+            initialValue="material_complete"
+          >
+            <Select placeholder="请选择通过原因分类">
+              {approveReasonCategories.map(cat => (
+                <Option key={cat.code} value={cat.code}>
+                  {cat.name}
+                </Option>
+              ))}
+            </Select>
+          </Form.Item>
+          <Form.Item
             name="comment"
             label="审批意见"
+            rules={[{ required: true, message: '请输入审批意见' }]}
             initialValue="材料齐全，同意通过"
           >
-            <TextArea rows={3} placeholder="请输入审批意见（可选）" />
+            <TextArea rows={3} placeholder="请输入审批意见" />
           </Form.Item>
         </Form>
       </Modal>
@@ -345,6 +391,20 @@ function WorkflowDemo() {
             initialValue="李四"
           >
             <Input placeholder="请输入审批人姓名" />
+          </Form.Item>
+          <Form.Item
+            name="reason_category"
+            label="驳回原因分类"
+            rules={[{ required: true, message: '请选择驳回原因分类' }]}
+            initialValue="material_missing"
+          >
+            <Select placeholder="请选择驳回原因分类">
+              {rejectReasonCategories.map(cat => (
+                <Option key={cat.code} value={cat.code}>
+                  {cat.name}
+                </Option>
+              ))}
+            </Select>
           </Form.Item>
           <Form.Item
             name="comment"
@@ -386,11 +446,26 @@ function WorkflowDemo() {
             </Select>
           </Form.Item>
           <Form.Item
+            name="reason_category"
+            label="退回原因分类"
+            rules={[{ required: true, message: '请选择退回原因分类' }]}
+            initialValue="material_incomplete"
+          >
+            <Select placeholder="请选择退回原因分类">
+              {rollbackReasonCategories.map(cat => (
+                <Option key={cat.code} value={cat.code}>
+                  {cat.name}
+                </Option>
+              ))}
+            </Select>
+          </Form.Item>
+          <Form.Item
             name="comment"
             label="退回原因"
+            rules={[{ required: true, message: '请输入退回原因' }]}
             initialValue="请补充财务数据后重新提交"
           >
-            <TextArea rows={3} placeholder="请输入退回原因（可选）" />
+            <TextArea rows={3} placeholder="请输入退回原因" />
           </Form.Item>
         </Form>
       </Modal>

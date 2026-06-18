@@ -8,6 +8,22 @@ function getCurrentUser(req) {
   return req.headers['x-user'] || 'anonymous';
 }
 
+function validateApprovalAction(actionType, comment, reasonCategory) {
+  const actionLabels = {
+    approve: '审批意见',
+    reject: '驳回原因',
+    rollback: '退回原因'
+  };
+  const label = actionLabels[actionType] || '原因';
+  if (!comment || !comment.trim()) {
+    return `${label}为必填项`;
+  }
+  if (!reasonCategory) {
+    return '请选择原因分类';
+  }
+  return null;
+}
+
 function getWorkflowConfig(declaration) {
   if (declaration.workflow_config_id) {
     const config = get('SELECT * FROM workflow_configs WHERE id = ?', [declaration.workflow_config_id]);
@@ -194,11 +210,9 @@ router.post('/declaration/:declarationId/approve', (req, res) => {
     const declarationId = req.params.declarationId;
     const user = getCurrentUser(req);
 
-    if (!comment || !comment.trim()) {
-      return res.status(400).json({ success: false, message: '审批意见为必填项' });
-    }
-    if (!reason_category) {
-      return res.status(400).json({ success: false, message: '请选择通过原因分类' });
+    const validationError = validateApprovalAction('approve', comment, reason_category);
+    if (validationError) {
+      return res.status(400).json({ success: false, message: validationError });
     }
 
     const declaration = get('SELECT * FROM declarations WHERE id = ? AND is_deleted = 0', [declarationId]);
@@ -260,11 +274,9 @@ router.post('/declaration/:declarationId/reject', (req, res) => {
     const declarationId = req.params.declarationId;
     const user = getCurrentUser(req);
 
-    if (!comment || !comment.trim()) {
-      return res.status(400).json({ success: false, message: '驳回原因为必填项' });
-    }
-    if (!reason_category) {
-      return res.status(400).json({ success: false, message: '请选择驳回原因分类' });
+    const validationError = validateApprovalAction('reject', comment, reason_category);
+    if (validationError) {
+      return res.status(400).json({ success: false, message: validationError });
     }
 
     const declaration = get('SELECT * FROM declarations WHERE id = ? AND is_deleted = 0', [declarationId]);
@@ -319,11 +331,9 @@ router.post('/declaration/:declarationId/rollback', (req, res) => {
     const declarationId = req.params.declarationId;
     const user = getCurrentUser(req);
 
-    if (!comment || !comment.trim()) {
-      return res.status(400).json({ success: false, message: '退回原因为必填项' });
-    }
-    if (!reason_category) {
-      return res.status(400).json({ success: false, message: '请选择退回原因分类' });
+    const validationError = validateApprovalAction('rollback', comment, reason_category);
+    if (validationError) {
+      return res.status(400).json({ success: false, message: validationError });
     }
 
     const declaration = get('SELECT * FROM declarations WHERE id = ? AND is_deleted = 0', [declarationId]);
