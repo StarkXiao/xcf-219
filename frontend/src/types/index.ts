@@ -786,3 +786,152 @@ export interface EnterpriseProfile {
     created_at: string;
   }>;
 }
+
+export type MatchLevel = 'excellent' | 'good' | 'fair' | 'low';
+
+export interface GuidelineTag {
+  id: number;
+  guideline_id: number;
+  tag_name: string;
+  tag_type?: string;
+  sort_order: number;
+  created_at: string;
+}
+
+export interface MatchDetail {
+  type: string;
+  label: string;
+  score: number;
+  max_score: number;
+  description: string;
+}
+
+export interface PolicyMatchResult {
+  guideline_id: number;
+  title: string;
+  category: string;
+  deadline?: string;
+  industry?: string;
+  score: number;
+  match_level: MatchLevel;
+  match_details: MatchDetail[];
+  tags: GuidelineTag[];
+  material_count: number;
+  history_stats: {
+    total_count: number;
+    approved_count: number;
+    pending_count: number;
+    approval_rate: number;
+  };
+  days_remaining?: number | null;
+}
+
+export interface PolicyRecommendResponse {
+  match_id: number;
+  total: number;
+  results: PolicyMatchResult[];
+  best_match: PolicyMatchResult | null;
+}
+
+export interface PolicyMatchRecord {
+  id: number;
+  company_name?: string;
+  applicant?: string;
+  project_title?: string;
+  project_content?: string;
+  industry?: string;
+  employee_count?: number;
+  tech_person_ratio?: number;
+  rd_ratio?: number;
+  ip_count?: number;
+  match_results: PolicyMatchResult[];
+  top_match_guideline_id?: number;
+  top_match_score?: number;
+  user_selected_guideline_id?: number;
+  match_source?: string;
+  match_context?: string;
+  created_by?: string;
+  created_at: string;
+  top_match_guideline?: Guideline;
+  selected_guideline?: Guideline;
+}
+
+export interface PolicyMatchStats {
+  total_matches: number;
+  total_selections: number;
+  today_matches: number;
+  top_guidelines: Array<{
+    id: number;
+    guideline_id: number;
+    match_count: number;
+    selected_count: number;
+    approval_count: number;
+    total_score: number;
+    avg_score: number;
+    last_match_at?: string;
+    updated_at: string;
+    title: string;
+    category: string;
+    deadline?: string;
+  }>;
+  category_stats: Array<{
+    category: string;
+    match_count: number;
+    select_count: number;
+  }>;
+  avg_top_score: number;
+  score_distribution: Array<{
+    score_range: string;
+    count: number;
+  }>;
+}
+
+export interface RecommendedMaterial {
+  id: number;
+  guideline_id: number | null;
+  name: string;
+  code: string;
+  description: string;
+  required: boolean;
+  allowed_extensions: string[];
+  max_size: number;
+  sort_order: number;
+  created_at: string;
+  is_category_required: boolean;
+  recommendation_reason: string;
+}
+
+export interface RecommendedMaterialsResponse {
+  guideline: {
+    id: number;
+    title: string;
+    category: string;
+  };
+  materials: RecommendedMaterial[];
+  stats: {
+    total: number;
+    required: number;
+    optional: number;
+  };
+}
+
+export const MatchLevelLabel: Record<MatchLevel, string> = {
+  excellent: '优秀',
+  good: '良好',
+  fair: '一般',
+  low: '较低'
+};
+
+export const MatchLevelColor: Record<MatchLevel, string> = {
+  excellent: '#52c41a',
+  good: '#1890ff',
+  fair: '#faad14',
+  low: '#8c8c8c'
+};
+
+export const MatchLevelColorMap: Record<MatchLevel, string> = {
+  excellent: 'green',
+  good: 'blue',
+  fair: 'orange',
+  low: 'default'
+};

@@ -52,7 +52,9 @@ function Logs() {
     审批退回: 'orange',
     查看: 'default',
     登录: 'purple',
-    查询: 'default'
+    查询: 'default',
+    '政策匹配推荐': 'geekblue',
+    '选择推荐政策': 'green'
   };
 
   const columns = [
@@ -140,6 +142,7 @@ function Logs() {
             <Option value="附件">附件</Option>
             <Option value="状态流转">状态流转</Option>
             <Option value="筛选方案">筛选方案</Option>
+            <Option value="政策匹配">政策匹配</Option>
           </Select>
           <Select
             placeholder="选择用户"

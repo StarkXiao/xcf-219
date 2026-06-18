@@ -1,23 +1,28 @@
 import { useEffect, useState } from 'react';
-import { Card, Col, Row, Statistic, Progress, List, Tag, Button } from 'antd';
+import { Card, Col, Row, Statistic, Progress, List, Tag, Button, Empty } from 'antd';
 import {
   FileTextOutlined,
   FormOutlined,
   CheckCircleOutlined,
   ClockCircleOutlined,
-  ArrowRightOutlined
+  ArrowRightOutlined,
+  ThunderboltOutlined,
+  RiseOutlined,
+  StarOutlined
 } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import { getDeclarations } from '../api/declarations';
 import { getGuidelines } from '../api/guidelines';
+import { getPolicyMatchStats } from '../api/policy-match';
 import { StatusMap, StatusColorMap } from '../types';
-import type { Declaration, Guideline } from '../types';
+import type { Declaration, Guideline, PolicyMatchStats } from '../types';
 
 function Dashboard() {
   const navigate = useNavigate();
   const [declarations, setDeclarations] = useState<Declaration[]>([]);
   const [guidelines, setGuidelines] = useState<Guideline[]>([]);
   const [loading, setLoading] = useState(false);
+  const [policyMatchStats, setPolicyMatchStats] = useState<PolicyMatchStats | null>(null);
 
   useEffect(() => {
     loadData();
@@ -26,12 +31,14 @@ function Dashboard() {
   const loadData = async () => {
     setLoading(true);
     try {
-      const [decRes, guideRes] = await Promise.all([
+      const [decRes, guideRes, statsRes] = await Promise.all([
         getDeclarations(),
-        getGuidelines()
+        getGuidelines(),
+        getPolicyMatchStats()
       ]);
       if (decRes.success) setDeclarations(decRes.data || []);
       if (guideRes.success) setGuidelines(guideRes.data || []);
+      if (statsRes.success) setPolicyMatchStats(statsRes.data || null);
     } catch (error) {
       console.error('加载数据失败:', error);
     }
@@ -47,6 +54,11 @@ function Dashboard() {
   };
 
   const recentDeclarations = declarations.slice(0, 5);
+
+  const topGuidelines = policyMatchStats?.top_guidelines || [];
+  const matchRate = policyMatchStats?.total_matches > 0
+    ? Math.round((policyMatchStats.total_selections / policyMatchStats.total_matches) * 100)
+    : 0;
 
   return (
     <div>
@@ -94,6 +106,94 @@ function Dashboard() {
       </Row>
 
       <Row gutter={[16, 16]} style={{ marginTop: 16 }}>
+        <Col span={6}>
+          <Card loading={loading}>
+            <Statistic
+              title="智能匹配次数"
+              value={policyMatchStats?.total_matches || 0}
+              prefix={<ThunderboltOutlined style={{ color: '#722ed1' }} />}
+            />
+          </Card>
+        </Col>
+        <Col span={6}>
+          <Card loading={loading}>
+            <Statistic
+              title="用户采纳数"
+              value={policyMatchStats?.total_selections || 0}
+              prefix={<RiseOutlined style={{ color: '#13c2c2' }} />}
+            />
+          </Card>
+        </Col>
+        <Col span={6}>
+          <Card loading={loading}>
+            <Statistic
+              title="平均匹配分"
+              value={policyMatchStats?.avg_top_score || 0}
+              suffix="分"
+              precision={1}
+              prefix={<StarOutlined style={{ color: '#fa8c16' }} />}
+            />
+          </Card>
+        </Col>
+        <Col span={6}>
+          <Card loading={loading}>
+            <Statistic
+              title="采纳率"
+              value={matchRate}
+              suffix="%"
+              prefix={<CheckCircleOutlined style={{ color: '#52c41a' }} />}
+            />
+          </Card>
+        </Col>
+      </Row>
+
+      <Row gutter={[16, 16]} style={{ marginTop: 16 }}>
+        <Col span={12}>
+          <Card
+            title="热门政策推荐排行"
+            extra={<Button type="link" onClick={() => navigate('/guidelines')}>查看更多 <ArrowRightOutlined /></Button>}
+          >
+            {topGuidelines.length > 0 ? (
+              <List
+                dataSource={topGuidelines.slice(0, 5)}
+                renderItem={(item, index) => (
+                  <List.Item key={item.guideline_id}>
+                    <List.Item.Meta
+                      avatar={
+                        <div style={{
+                          width: 24,
+                          height: 24,
+                          borderRadius: '50%',
+                          background: index < 3 ? '#fa8c16' : '#d9d9d9',
+                          color: '#fff',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          fontSize: 12,
+                          fontWeight: 'bold'
+                        }}>
+                          {index + 1}
+                        </div>
+                      }
+                      title={item.title}
+                      description={
+                        <div>
+                          <Tag color="blue">匹配 {item.match_count} 次</Tag>
+                          <Tag color="green">采纳 {item.selected_count} 次</Tag>
+                          <span style={{ color: '#999', marginLeft: 8 }}>
+                            平均分: {item.avg_score?.toFixed(1) || 0}
+                          </span>
+                        </div>
+                      }
+                    />
+                  </List.Item>
+                )}
+              />
+            ) : (
+              <Empty description="暂无匹配数据" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+            )}
+          </Card>
+        </Col>
         <Col span={12}>
           <Card
             title="申报指南"
@@ -119,12 +219,16 @@ function Dashboard() {
             />
           </Card>
         </Col>
-        <Col span={12}>
+      </Row>
+
+      <Row gutter={[16, 16]} style={{ marginTop: 16 }}>
+        <Col span={24}>
           <Card
             title="最新申报"
             extra={<Button type="link" onClick={() => navigate('/declarations')}>查看更多 <ArrowRightOutlined /></Button>}
           >
             <List
+              grid={{ gutter: 16, column: 2 }}
               dataSource={recentDeclarations}
               renderItem={(item) => (
                 <List.Item key={item.id}>

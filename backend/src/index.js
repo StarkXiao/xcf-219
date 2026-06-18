@@ -14,6 +14,7 @@ const versionsModule = require('./routes/versions');
 const enterpriseProfilesModule = require('./routes/enterprise-profiles');
 const projectExecutionModule = require('./routes/project-execution');
 const searchRouter = require('./routes/search');
+const policyMatchRouter = require('./routes/policy-match');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -39,6 +40,7 @@ app.use('/api/versions', versionsModule.router);
 app.use('/api/enterprise-profiles', enterpriseProfilesModule.router);
 app.use('/api/project-execution', projectExecutionModule.router);
 app.use('/api/search', searchRouter);
+app.use('/api/policy-match', policyMatchRouter);
 
 app.use((err, req, res, next) => {
   console.error(err.stack);

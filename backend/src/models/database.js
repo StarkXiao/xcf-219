@@ -390,6 +390,52 @@ function initDatabase() {
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (acceptance_node_id) REFERENCES acceptance_nodes(id)
     );
+
+    CREATE TABLE IF NOT EXISTS policy_match_records (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      company_name TEXT,
+      applicant TEXT,
+      project_title TEXT,
+      project_content TEXT,
+      industry TEXT,
+      employee_count INTEGER,
+      tech_person_ratio REAL,
+      rd_ratio REAL,
+      ip_count INTEGER,
+      match_results TEXT,
+      top_match_guideline_id INTEGER,
+      top_match_score REAL,
+      user_selected_guideline_id INTEGER,
+      match_source TEXT,
+      match_context TEXT,
+      created_by TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (top_match_guideline_id) REFERENCES guidelines(id),
+      FOREIGN KEY (user_selected_guideline_id) REFERENCES guidelines(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS policy_match_stats (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      guideline_id INTEGER NOT NULL,
+      match_count INTEGER DEFAULT 0,
+      selected_count INTEGER DEFAULT 0,
+      approval_count INTEGER DEFAULT 0,
+      total_score REAL DEFAULT 0,
+      avg_score REAL DEFAULT 0,
+      last_match_at DATETIME,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (guideline_id) REFERENCES guidelines(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS guideline_tags (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      guideline_id INTEGER NOT NULL,
+      tag_name TEXT NOT NULL,
+      tag_type TEXT,
+      sort_order INTEGER DEFAULT 0,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (guideline_id) REFERENCES guidelines(id) ON DELETE CASCADE
+    );
   `);
 
   safeAddColumn('attachments', 'material_type_id', 'INTEGER REFERENCES material_types(id)');
@@ -428,34 +474,99 @@ function initDatabase() {
   safeCreateIndex('idx_deliverable_attachments_deliverable', 'deliverable_attachments', 'deliverable_id');
   safeCreateIndex('idx_acceptance_nodes_phase', 'acceptance_nodes', 'phase_instance_id');
   safeCreateIndex('idx_acceptance_records_node', 'acceptance_records', 'acceptance_node_id');
+  safeCreateIndex('idx_policy_match_company', 'policy_match_records', 'company_name');
+  safeCreateIndex('idx_policy_match_guideline', 'policy_match_records', 'top_match_guideline_id');
+  safeCreateIndex('idx_policy_match_stats_guideline', 'policy_match_stats', 'guideline_id');
+  safeCreateIndex('idx_guideline_tags_guideline', 'guideline_tags', 'guideline_id');
+  safeCreateIndex('idx_guideline_tags_name', 'guideline_tags', 'tag_name');
+
+  safeAddColumn('guidelines', 'industry', 'TEXT');
+  safeAddColumn('guidelines', 'min_employee_count', 'INTEGER');
+  safeAddColumn('guidelines', 'max_employee_count', 'INTEGER');
+  safeAddColumn('guidelines', 'min_tech_ratio', 'REAL');
+  safeAddColumn('guidelines', 'min_rd_ratio', 'REAL');
+  safeAddColumn('guidelines', 'requires_ip', 'INTEGER DEFAULT 0');
+  safeAddColumn('guidelines', 'min_registered_years', 'INTEGER DEFAULT 0');
+  safeAddColumn('guidelines', 'keywords', 'TEXT');
 
   const guidelineCount = get('SELECT COUNT(*) as count FROM guidelines');
   if (guidelineCount.count === 0) {
     const insertGuideline = db.prepare(`
-      INSERT INTO guidelines (title, content, category, deadline)
-      VALUES (?, ?, ?, ?)
+      INSERT INTO guidelines (title, content, category, deadline, industry, min_employee_count, max_employee_count, min_tech_ratio, min_rd_ratio, requires_ip, min_registered_years, keywords)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     insertGuideline.run(
       '2024年度科技型中小企业技术创新基金',
       '为支持科技型中小企业技术创新，加快科技成果转化，现开展2024年度科技型中小企业技术创新基金申报工作。\n\n一、支持方向\n1. 电子信息领域\n2. 生物医药领域\n3. 新材料领域\n4. 先进制造领域\n\n二、申报条件\n1. 在中国境内依法注册的企业\n2. 职工人数不超过500人\n3. 具有大专以上学历的科技人员占职工总数的比例不低于30%\n4. 每年用于高新技术产品研究开发的经费不低于销售额的5%\n\n三、申报流程\n1. 在线填报申报材料\n2. 上传相关附件\n3. 提交初审\n4. 专家评审\n5. 公示立项',
       '科技项目',
-      '2024-12-31'
+      '2024-12-31',
+      '科技型',
+      0,
+      500,
+      30,
+      5,
+      0,
+      0,
+      '技术创新,科技型中小企业,电子信息,生物医药,新材料,先进制造,研发'
     );
 
     insertGuideline.run(
       '2024年度小微企业发展专项资金',
       '为贯彻落实国家关于支持小微企业发展的政策措施，促进小微企业健康发展，现组织开展2024年度小微企业发展专项资金申报工作。\n\n一、支持范围\n1. 小微企业创业基地建设\n2. 小微企业公共服务平台\n3. 小微企业融资担保\n4. 小微企业转型升级\n\n二、申报条件\n1. 依法设立的小微企业\n2. 符合国家产业政策\n3. 财务管理制度健全\n4. 无不良信用记录',
       '企业发展',
-      '2024-11-30'
+      '2024-11-30',
+      '小微企业',
+      0,
+      300,
+      0,
+      0,
+      0,
+      1,
+      '小微企业,创业,转型升级,融资担保,公共服务,企业发展'
     );
 
     insertGuideline.run(
       '2024年度高新技术企业认定',
       '根据《高新技术企业认定管理办法》，现开展2024年度高新技术企业认定工作。\n\n一、认定条件\n1. 企业申请认定时须注册成立一年以上\n2. 企业通过自主研发、受让、受赠、并购等方式，获得对其主要产品（服务）在技术上发挥核心支持作用的知识产权的所有权\n3. 对企业主要产品（服务）发挥核心支持作用的技术属于《国家重点支持的高新技术领域》规定的范围\n4. 企业从事研发和相关技术创新活动的科技人员占企业当年职工总数的比例不低于10%',
       '资质认定',
-      '2024-10-31'
+      '2024-10-31',
+      '高新技术',
+      0,
+      10000,
+      10,
+      3,
+      1,
+      1,
+      '高新技术企业,知识产权,研发投入,科技人员,高新领域,资质认定'
     );
+  }
+
+  const tagCount = get('SELECT COUNT(*) as count FROM guideline_tags');
+  if (tagCount.count === 0) {
+    const insertTag = db.prepare(`
+      INSERT INTO guideline_tags (guideline_id, tag_name, tag_type, sort_order)
+      VALUES (?, ?, ?, ?)
+    `);
+
+    insertTag.run(1, '电子信息', 'industry', 1);
+    insertTag.run(1, '生物医药', 'industry', 2);
+    insertTag.run(1, '新材料', 'industry', 3);
+    insertTag.run(1, '先进制造', 'industry', 4);
+    insertTag.run(1, '技术创新', 'feature', 1);
+    insertTag.run(1, '科技型', 'enterprise_type', 1);
+
+    insertTag.run(2, '创业基地', 'feature', 1);
+    insertTag.run(2, '公共服务', 'feature', 2);
+    insertTag.run(2, '融资担保', 'feature', 3);
+    insertTag.run(2, '转型升级', 'feature', 4);
+    insertTag.run(2, '小微企业', 'enterprise_type', 1);
+
+    insertTag.run(3, '知识产权', 'requirement', 1);
+    insertTag.run(3, '研发投入', 'requirement', 2);
+    insertTag.run(3, '科技人员', 'requirement', 3);
+    insertTag.run(3, '高新领域', 'feature', 1);
+    insertTag.run(3, '资质认定', 'feature', 2);
   }
 
   const stepCount = get('SELECT COUNT(*) as count FROM workflow_steps');

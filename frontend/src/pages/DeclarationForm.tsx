@@ -24,6 +24,9 @@ import type {
   SaveTypeOption, VersionsListResponse, FieldDiff, RestorePreviewResult,
   QualificationCheckResult, RiskItem, RiskLevel
 } from '../types';
+import PolicyRecommendPanel from '../components/PolicyRecommendPanel';
+import RecommendedMaterials from '../components/RecommendedMaterials';
+import { selectPolicy } from '../api/policy-match';
 
 const { TextArea } = Input;
 const { Option } = Select;
@@ -79,6 +82,10 @@ function DeclarationForm() {
   const qualificationTimerRef = useRef<number | null>(null);
   const lastQualificationDataRef = useRef<string>('');
 
+  const [policyMatchId, setPolicyMatchId] = useState<number | null>(null);
+  const [showPolicyRecommend, setShowPolicyRecommend] = useState(true);
+  const [selectedGuidelineId, setSelectedGuidelineId] = useState<number | null>(null);
+
   useEffect(() => {
     loadGuidelines();
     loadSaveTypes();
@@ -98,6 +105,10 @@ function DeclarationForm() {
   }, [id]);
 
   const handleFormValuesChange = (changedValues: any, allValues: any) => {
+    if (allValues.guideline_id !== undefined) {
+      setSelectedGuidelineId(allValues.guideline_id);
+    }
+
     const checkData = {
       guideline_id: allValues.guideline_id,
       company: allValues.company,
@@ -289,6 +300,9 @@ function DeclarationForm() {
         const data = res.data;
         setDeclaration(data);
         form.setFieldsValue(data);
+        if (data.guideline_id) {
+          setSelectedGuidelineId(data.guideline_id);
+        }
         lastFormValuesRef.current = {
           title: data.title,
           guideline_id: data.guideline_id,
@@ -334,6 +348,13 @@ function DeclarationForm() {
     } catch (error) {
       console.error('加载附件失败:', error);
     }
+  };
+
+  const handleSelectPolicy = (guidelineId: number, matchId: number) => {
+    form.setFieldsValue({ guideline_id: guidelineId });
+    setSelectedGuidelineId(guidelineId);
+    setPolicyMatchId(matchId);
+    message.success('已选用该申报指南');
   };
 
   const handleUpload = async (fileList: File[]) => {
@@ -835,6 +856,29 @@ function DeclarationForm() {
           </Form.Item>
         </Form>
       </Card>
+
+      {showPolicyRecommend && (!declaration || declaration.status === 'draft') && (
+        <div style={{ marginBottom: 16 }}>
+          <PolicyRecommendPanel
+            companyName={form.getFieldValue('company')}
+            applicant={form.getFieldValue('applicant')}
+            projectTitle={form.getFieldValue('title')}
+            projectContent={form.getFieldValue('content')}
+            onSelect={handleSelectPolicy}
+            showQuickCreate={false}
+            matchSource="declaration_form"
+          />
+        </div>
+      )}
+
+      {selectedGuidelineId && (
+        <div style={{ marginBottom: 16 }}>
+          <RecommendedMaterials
+            guidelineId={selectedGuidelineId}
+            showUploadButton={false}
+          />
+        </div>
+      )}
 
       <Card title="附件材料" style={{ marginBottom: 16 }}>
         {(isEdit || declaration) && (
