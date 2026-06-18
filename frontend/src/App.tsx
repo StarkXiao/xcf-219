@@ -8,7 +8,12 @@ import {
   CheckCircleOutlined,
   ExceptionOutlined,
   DashboardOutlined,
-  DeleteFilled
+  DeleteFilled,
+  AuditOutlined,
+  TeamOutlined,
+  SolutionOutlined,
+  SendOutlined,
+  BarChartOutlined
 } from '@ant-design/icons';
 import Guidelines from './pages/Guidelines';
 import GuidelineDetail from './pages/GuidelineDetail';
@@ -22,6 +27,11 @@ import Logs from './pages/Logs';
 import Dashboard from './pages/Dashboard';
 import RecycleBin from './pages/RecycleBin';
 import GlobalSearch from './components/GlobalSearch';
+import ExpertReviewCenter from './pages/ExpertReviewCenter';
+import ExpertManagement from './pages/ExpertManagement';
+import ReviewGroupDispatch from './pages/ReviewGroupDispatch';
+import ExpertScoring from './pages/ExpertScoring';
+import ReviewSummaryPage from './pages/ReviewSummaryPage';
 
 const { Header, Sider, Content } = Layout;
 
@@ -40,6 +50,38 @@ const menuItems = [
     key: '/declarations',
     icon: <FormOutlined />,
     label: '申报管理',
+  },
+  {
+    key: '/expert-review',
+    icon: <AuditOutlined />,
+    label: '专家评审中心',
+    children: [
+      {
+        key: '/expert-review/dashboard',
+        icon: <SolutionOutlined />,
+        label: '评审中心主页',
+      },
+      {
+        key: '/expert-review/experts',
+        icon: <TeamOutlined />,
+        label: '专家管理',
+      },
+      {
+        key: '/expert-review/groups',
+        icon: <SolutionOutlined />,
+        label: '分组派单',
+      },
+      {
+        key: '/expert-review/scoring',
+        icon: <SendOutlined />,
+        label: '专家评分',
+      },
+      {
+        key: '/expert-review/summaries',
+        icon: <BarChartOutlined />,
+        label: '意见汇总',
+      },
+    ],
   },
   {
     key: '/recycle-bin',
@@ -86,6 +128,9 @@ function App() {
     if (path.startsWith('/declarations/')) {
       return '/declarations';
     }
+    if (path.startsWith('/expert-review/')) {
+      return path;
+    }
     return path;
   };
 
@@ -129,6 +174,11 @@ function App() {
                 <Route path="/declarations/new" element={<DeclarationForm />} />
                 <Route path="/declarations/:id/edit" element={<DeclarationForm />} />
                 <Route path="/declarations/:id" element={<DeclarationDetail />} />
+                <Route path="/expert-review/dashboard" element={<ExpertReviewCenter />} />
+                <Route path="/expert-review/experts" element={<ExpertManagement />} />
+                <Route path="/expert-review/groups" element={<ReviewGroupDispatch />} />
+                <Route path="/expert-review/scoring" element={<ExpertScoring />} />
+                <Route path="/expert-review/summaries" element={<ReviewSummaryPage />} />
                 <Route path="/recycle-bin" element={<RecycleBin />} />
                 <Route path="/attachments" element={<AttachmentDemo />} />
                 <Route path="/workflow" element={<WorkflowDemo />} />

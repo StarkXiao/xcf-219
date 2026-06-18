@@ -478,7 +478,128 @@ function initDatabase() {
   safeCreateIndex('idx_policy_match_guideline', 'policy_match_records', 'top_match_guideline_id');
   safeCreateIndex('idx_policy_match_stats_guideline', 'policy_match_stats', 'guideline_id');
   safeCreateIndex('idx_guideline_tags_guideline', 'guideline_tags', 'guideline_id');
-  safeCreateIndex('idx_guideline_tags_name', 'guideline_tags', 'tag_name');
+  safeCreateIndex('idx_guideline_tags_guideline', 'guideline_tags', 'tag_name');
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS experts (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      code TEXT UNIQUE,
+      title TEXT,
+      organization TEXT,
+      field TEXT,
+      specialties TEXT,
+      phone TEXT,
+      email TEXT,
+      level TEXT DEFAULT 'general',
+      status TEXT DEFAULT 'active',
+      review_count INTEGER DEFAULT 0,
+      avg_score REAL DEFAULT 0,
+      last_review_at DATETIME,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS scoring_criteria (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      guideline_id INTEGER,
+      name TEXT NOT NULL,
+      code TEXT NOT NULL,
+      description TEXT,
+      max_score REAL NOT NULL DEFAULT 100,
+      weight REAL NOT NULL DEFAULT 1,
+      sort_order INTEGER DEFAULT 0,
+      is_active INTEGER DEFAULT 1,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (guideline_id) REFERENCES guidelines(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS review_groups (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      guideline_id INTEGER,
+      description TEXT,
+      declaration_ids TEXT DEFAULT '[]',
+      expert_ids TEXT DEFAULT '[]',
+      status TEXT DEFAULT 'pending',
+      created_by TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (guideline_id) REFERENCES guidelines(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS review_tasks (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      group_id INTEGER NOT NULL,
+      declaration_id INTEGER NOT NULL,
+      expert_id INTEGER NOT NULL,
+      guideline_id INTEGER,
+      status TEXT DEFAULT 'pending',
+      assigned_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      started_at DATETIME,
+      submitted_at DATETIME,
+      deadline DATETIME,
+      total_score REAL,
+      review_comment TEXT,
+      is_anonymous INTEGER DEFAULT 1,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (group_id) REFERENCES review_groups(id) ON DELETE CASCADE,
+      FOREIGN KEY (declaration_id) REFERENCES declarations(id),
+      FOREIGN KEY (expert_id) REFERENCES experts(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS review_scores (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      task_id INTEGER NOT NULL,
+      declaration_id INTEGER NOT NULL,
+      expert_id INTEGER NOT NULL,
+      criterion_id INTEGER NOT NULL,
+      score REAL NOT NULL DEFAULT 0,
+      comment TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (task_id) REFERENCES review_tasks(id) ON DELETE CASCADE,
+      FOREIGN KEY (declaration_id) REFERENCES declarations(id),
+      FOREIGN KEY (expert_id) REFERENCES experts(id),
+      FOREIGN KEY (criterion_id) REFERENCES scoring_criteria(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS review_summaries (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      declaration_id INTEGER NOT NULL,
+      guideline_id INTEGER,
+      group_id INTEGER,
+      expert_count INTEGER DEFAULT 0,
+      submitted_count INTEGER DEFAULT 0,
+      avg_total_score REAL,
+      min_total_score REAL,
+      max_total_score REAL,
+      score_distribution TEXT,
+      final_recommendation TEXT,
+      final_comment TEXT,
+      workflow_written INTEGER DEFAULT 0,
+      written_at DATETIME,
+      written_by TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (declaration_id) REFERENCES declarations(id),
+      FOREIGN KEY (guideline_id) REFERENCES guidelines(id),
+      FOREIGN KEY (group_id) REFERENCES review_groups(id)
+    );
+  `);
+
+  safeCreateIndex('idx_experts_field', 'experts', 'field');
+  safeCreateIndex('idx_experts_status', 'experts', 'status');
+  safeCreateIndex('idx_scoring_criteria_guideline', 'scoring_criteria', 'guideline_id');
+  safeCreateIndex('idx_review_groups_guideline', 'review_groups', 'guideline_id');
+  safeCreateIndex('idx_review_tasks_group', 'review_tasks', 'group_id');
+  safeCreateIndex('idx_review_tasks_declaration', 'review_tasks', 'declaration_id');
+  safeCreateIndex('idx_review_tasks_expert', 'review_tasks', 'expert_id');
+  safeCreateIndex('idx_review_tasks_status', 'review_tasks', 'status');
+  safeCreateIndex('idx_review_scores_task', 'review_scores', 'task_id');
+  safeCreateIndex('idx_review_scores_declaration', 'review_scores', 'declaration_id');
+  safeCreateIndex('idx_review_summaries_declaration', 'review_summaries', 'declaration_id');
 
   safeAddColumn('guidelines', 'industry', 'TEXT');
   safeAddColumn('guidelines', 'min_employee_count', 'INTEGER');
@@ -820,6 +941,54 @@ function initDatabase() {
     });
 
     console.log('初始化默认项目阶段模板完成');
+  }
+
+  const expertCount = get('SELECT COUNT(*) as count FROM experts');
+  if (expertCount.count === 0) {
+    const insertExpert = db.prepare(`
+      INSERT INTO experts (name, code, title, organization, field, specialties, phone, email, level, status)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+
+    const experts = [
+      { name: '王教授', code: 'EXP001', title: '教授/博导', org: '清华大学自动化系', field: '电子信息', specs: '人工智能,机器学习,机器人', phone: '13900000001', email: 'wang@tsinghua.edu.cn', level: 'senior' },
+      { name: '李研究员', code: 'EXP002', title: '研究员', org: '中科院计算所', field: '电子信息', specs: '大数据,云计算,分布式系统', phone: '13900000002', email: 'li@ict.ac.cn', level: 'senior' },
+      { name: '张教授', code: 'EXP003', title: '教授', org: '北京大学药学院', field: '生物医药', specs: '新药研发,生物制药,分子生物学', phone: '13900000003', email: 'zhang@pku.edu.cn', level: 'senior' },
+      { name: '陈研究员', code: 'EXP004', title: '研究员', org: '中科院上海有机所', field: '生物医药', specs: '有机合成,药物化学,天然产物', phone: '13900000004', email: 'chen@sioc.ac.cn', level: 'senior' },
+      { name: '刘教授', code: 'EXP005', title: '教授', org: '上海交通大学材料学院', field: '新材料', specs: '纳米材料,功能材料,复合材料', phone: '13900000005', email: 'liu@sjtu.edu.cn', level: 'senior' },
+      { name: '赵高工', code: 'EXP006', title: '高级工程师', org: '宝钢研究院', field: '新材料', specs: '金属材料,合金,表面处理', phone: '13900000006', email: 'zhao@baosteel.com', level: 'general' },
+      { name: '孙教授', code: 'EXP007', title: '教授', org: '华中科技大学机械学院', field: '先进制造', specs: '智能制造,数控技术,工业机器人', phone: '13900000007', email: 'sun@hust.edu.cn', level: 'senior' },
+      { name: '周研究员', code: 'EXP008', title: '研究员', org: '沈阳自动化所', field: '先进制造', specs: '工业自动化,智能装备,传感技术', phone: '13900000008', email: 'zhou@sia.cn', level: 'general' },
+      { name: '吴会计师', code: 'EXP009', title: '注册会计师', org: '普华永道', field: '财务管理', specs: '财务审计,税务筹划,风险控制', phone: '13900000009', email: 'wu@pwc.com', level: 'general' },
+      { name: '郑律师', code: 'EXP010', title: '高级律师', org: '国浩律师事务所', field: '知识产权', specs: '专利法,商标法,知识产权诉讼', phone: '13900000010', email: 'zheng@grandall.com.cn', level: 'general' }
+    ];
+
+    experts.forEach(e => {
+      insertExpert.run(e.name, e.code, e.title, e.org, e.field, e.specs, e.phone, e.email, e.level, 'active');
+    });
+    console.log('初始化专家库完成');
+  }
+
+  const criteriaCount = get('SELECT COUNT(*) as count FROM scoring_criteria');
+  if (criteriaCount.count === 0) {
+    const insertCriterion = db.prepare(`
+      INSERT INTO scoring_criteria (guideline_id, name, code, description, max_score, weight, sort_order)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `);
+
+    const defaultCriteria = [
+      { gid: null, name: '技术创新性', code: 'innovation', desc: '项目技术方案的创新程度，包括核心技术突破、自主知识产权等', max: 25, weight: 0.25, order: 1 },
+      { gid: null, name: '技术可行性', code: 'feasibility', desc: '技术路线的合理性、关键技术的成熟度、实现难度评估', max: 20, weight: 0.20, order: 2 },
+      { gid: null, name: '市场前景', code: 'market', desc: '目标市场规模、竞争态势、产品竞争力和市场占有率预期', max: 20, weight: 0.20, order: 3 },
+      { gid: null, name: '团队实力', code: 'team', desc: '项目团队构成、核心人员经验和能力、研发基础条件', max: 15, weight: 0.15, order: 4 },
+      { gid: null, name: '财务合理性', code: 'finance', desc: '经费预算的合理性、资金筹措能力、预期经济效益', max: 10, weight: 0.10, order: 5 },
+      { gid: null, name: '社会效益', code: 'social', desc: '项目对行业发展、就业、环保等方面的贡献', max: 10, weight: 0.10, order: 6 }
+    ];
+
+    defaultCriteria.forEach(c => {
+      insertCriterion.run(c.gid, c.name, c.code, c.desc, c.max, c.weight, c.order);
+    });
+    console.log('初始化评分标准完成');
   }
 
   console.log('数据库初始化完成');
