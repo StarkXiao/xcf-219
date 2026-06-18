@@ -11,6 +11,7 @@ import {
   DeleteFilled
 } from '@ant-design/icons';
 import Guidelines from './pages/Guidelines';
+import GuidelineDetail from './pages/GuidelineDetail';
 import DeclarationForm from './pages/DeclarationForm';
 import DeclarationList from './pages/DeclarationList';
 import DeclarationDetail from './pages/DeclarationDetail';
@@ -76,6 +77,9 @@ function App() {
 
   const getSelectedKey = () => {
     const path = location.pathname;
+    if (path.startsWith('/guidelines/')) {
+      return '/guidelines';
+    }
     if (path.startsWith('/declarations/') && path.includes('/edit')) {
       return '/declarations';
     }
@@ -120,6 +124,7 @@ function App() {
                 <Route path="/" element={<Dashboard />} />
                 <Route path="/dashboard" element={<Dashboard />} />
                 <Route path="/guidelines" element={<Guidelines />} />
+                <Route path="/guidelines/:id" element={<GuidelineDetail />} />
                 <Route path="/declarations" element={<DeclarationList />} />
                 <Route path="/declarations/new" element={<DeclarationForm />} />
                 <Route path="/declarations/:id/edit" element={<DeclarationForm />} />

@@ -86,11 +86,33 @@ function GlobalSearch() {
   const handleItemClick = (item: SearchResultItem) => {
     setOpen(false);
     let path = item.route_path;
-    if (item.target_id && (item.module === 'declarations' || item.module === 'guidelines')) {
-      path = `${item.route_path}/${item.target_id}`;
-    } else if (item.target_id && item.route_path === '/declarations') {
-      path = `/declarations/${item.target_id}`;
+
+    switch (item.module) {
+      case 'guidelines':
+        if (item.id) {
+          path = `/guidelines/${item.id}`;
+        }
+        break;
+      case 'declarations':
+        if (item.id) {
+          path = `/declarations/${item.id}`;
+        }
+        break;
+      case 'attachments':
+      case 'approval_records':
+        if (item.target_id) {
+          path = `/declarations/${item.target_id}`;
+        }
+        break;
+      case 'operation_logs':
+        path = '/logs';
+        break;
+      default:
+        if (item.target_id) {
+          path = `${item.route_path}/${item.target_id}`;
+        }
     }
+
     navigate(path);
   };
 
