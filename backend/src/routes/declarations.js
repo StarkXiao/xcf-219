@@ -13,7 +13,8 @@ const STATUS_MAP = {
   first_reviewed: '待复审',
   second_reviewed: '待终审',
   approved: '已立项',
-  rejected: '已驳回'
+  rejected: '已驳回',
+  completed: '已完成'
 };
 
 function getCurrentUser(req) {
@@ -49,6 +50,10 @@ function enrichDeclarationWorkflow(declaration) {
     result.current_step_name = '已立项';
     result.current_step_role = '系统';
     result.status_label = '已立项';
+  } else if (declaration.status === 'completed') {
+    result.current_step_name = '已完成';
+    result.current_step_role = '系统';
+    result.status_label = '项目完成';
   } else if (declaration.status === 'rejected') {
     result.current_step_name = '已驳回';
     result.current_step_role = '系统';
@@ -155,6 +160,13 @@ router.get('/stats', (req, res) => {
         WHERE is_deleted = 0 AND status IN ('submitted','reviewing','first_reviewed','second_reviewed')
       `).count,
       approved: get("SELECT COUNT(*) as count FROM declarations WHERE is_deleted = 0 AND status = 'approved'").count,
+      completed: get("SELECT COUNT(*) as count FROM declarations WHERE is_deleted = 0 AND status = 'completed'").count,
+      in_execution: get(`
+        SELECT COUNT(*) as count FROM declarations d
+        INNER JOIN project_phase_instances p ON d.id = p.declaration_id
+        WHERE d.is_deleted = 0 AND d.status IN ('approved','completed')
+        AND p.status = 'in_progress'
+      `).count,
       rejected: get("SELECT COUNT(*) as count FROM declarations WHERE is_deleted = 0 AND status = 'rejected'").count,
       deleted: get('SELECT COUNT(*) as count FROM declarations WHERE is_deleted = 1').count,
       total_versions: get('SELECT COUNT(*) as count FROM declaration_versions').count
@@ -1048,7 +1060,8 @@ router.post('/batch/export', (req, res) => {
       first_reviewed: '待复审',
       second_reviewed: '待终审',
       approved: '已立项',
-      rejected: '已驳回'
+      rejected: '已驳回',
+      completed: '已完成'
     };
 
     const csvHeader = ['ID', '项目名称', '申请人', '企业名称', '关联指南', '状态', '联系电话', '电子邮箱', '创建时间', '更新时间'];

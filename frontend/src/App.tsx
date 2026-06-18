@@ -1,5 +1,5 @@
-import { Routes, Route, useNavigate, useLocation } from 'react-router-dom';
-import { Layout, Menu, theme, Badge, App as AntdApp } from 'antd';
+import { Routes, Route, useNavigate, useLocation, useParams } from 'react-router-dom';
+import { Layout, Menu, theme, Badge, App as AntdApp, Card, Button, Space } from 'antd';
 import {
   FileTextOutlined,
   FormOutlined,
@@ -8,7 +8,9 @@ import {
   CheckCircleOutlined,
   ExceptionOutlined,
   DashboardOutlined,
-  DeleteFilled
+  DeleteFilled,
+  ExperimentOutlined,
+  ArrowLeftOutlined
 } from '@ant-design/icons';
 import Guidelines from './pages/Guidelines';
 import DeclarationForm from './pages/DeclarationForm';
@@ -20,6 +22,7 @@ import Approval from './pages/Approval';
 import Logs from './pages/Logs';
 import Dashboard from './pages/Dashboard';
 import RecycleBin from './pages/RecycleBin';
+import ProjectExecution from './pages/ProjectExecution';
 
 const { Header, Sider, Content } = Layout;
 
@@ -120,6 +123,7 @@ function App() {
                 <Route path="/declarations/new" element={<DeclarationForm />} />
                 <Route path="/declarations/:id/edit" element={<DeclarationForm />} />
                 <Route path="/declarations/:id" element={<DeclarationDetail />} />
+                <Route path="/declarations/:id/execution" element={<ProjectExecutionStandalone />} />
                 <Route path="/recycle-bin" element={<RecycleBin />} />
                 <Route path="/attachments" element={<AttachmentDemo />} />
                 <Route path="/workflow" element={<WorkflowDemo />} />
@@ -131,6 +135,31 @@ function App() {
         </Layout>
       </Layout>
     </AntdApp>
+  );
+}
+
+function ProjectExecutionStandalone() {
+  const navigate = useNavigate();
+  const { id } = useParams<{ id: string }>();
+
+  if (!id) return null;
+
+  return (
+    <div>
+      <div style={{ marginBottom: 16 }}>
+        <Space>
+          <Button icon={<ArrowLeftOutlined />} onClick={() => navigate(`/declarations/${id}`)}>
+            返回申报详情
+          </Button>
+          <h2 style={{ margin: 0, display: 'inline-block' }}>项目执行管理</h2>
+        </Space>
+      </div>
+      <ProjectExecution
+        declarationId={parseInt(id)}
+        declarationTitle=""
+        declarationStatus=""
+      />
+    </div>
   );
 }
 

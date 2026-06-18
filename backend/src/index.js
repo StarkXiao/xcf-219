@@ -12,6 +12,7 @@ const workflowConfigsRouter = require('./routes/workflow-configs');
 const logsRouter = require('./routes/logs');
 const versionsModule = require('./routes/versions');
 const enterpriseProfilesModule = require('./routes/enterprise-profiles');
+const projectExecutionModule = require('./routes/project-execution');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -35,6 +36,7 @@ app.use('/api/workflow-configs', workflowConfigsRouter);
 app.use('/api/logs', logsRouter);
 app.use('/api/versions', versionsModule.router);
 app.use('/api/enterprise-profiles', enterpriseProfilesModule.router);
+app.use('/api/project-execution', projectExecutionModule.router);
 
 app.use((err, req, res, next) => {
   console.error(err.stack);

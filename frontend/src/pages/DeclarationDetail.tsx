@@ -10,7 +10,8 @@ import {
   CheckCircleOutlined, SyncOutlined, ClockCircleOutlined,
   CloseCircleOutlined, EditOutlined, DeleteOutlined,
   PlusOutlined, CloudUploadOutlined, FolderOpenOutlined,
-  UserOutlined, CalendarOutlined, TeamOutlined
+  UserOutlined, CalendarOutlined, TeamOutlined,
+  ExperimentOutlined
 } from '@ant-design/icons';
 import { useNavigate, useParams } from 'react-router-dom';
 import dayjs from 'dayjs';
@@ -30,6 +31,7 @@ import type {
   OperationTimelineEvent, WorkflowInfo, MissingCheckResult,
   ApprovalReasonCategory, DeclarationResubmission
 } from '../types';
+import ProjectExecution from './ProjectExecution';
 
 const { TextArea } = Input;
 const { Option } = Select;
@@ -1135,6 +1137,22 @@ function DeclarationDetail() {
           )}
         </div>
       )
+    },
+    {
+      key: 'execution',
+      label: (
+        <span>
+          <ExperimentOutlined />
+          项目执行
+        </span>
+      ),
+      children: id ? (
+        <ProjectExecution
+          declarationId={parseInt(id)}
+          declarationTitle={declaration?.title}
+          declarationStatus={declaration?.status}
+        />
+      ) : null
     }
   ];
 
