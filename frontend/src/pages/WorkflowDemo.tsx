@@ -96,7 +96,7 @@ function WorkflowDemo() {
       if (res.success) {
         message.success('创建演示申报成功');
         loadDeclarations();
-        setSelectedId(res.data.id);
+        setSelectedId(res.data!.id);
       }
     } catch (error) {
       message.error('创建失败');

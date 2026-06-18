@@ -69,7 +69,7 @@ function AttachmentDemo() {
         setCreateModalVisible(false);
         form.resetFields();
         loadDeclarations();
-        setSelectedDeclarationId(res.data.id);
+        setSelectedDeclarationId(res.data!.id);
       }
     } catch (error: any) {
       message.error(error.response?.data?.message || '创建失败');
